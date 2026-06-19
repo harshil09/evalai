@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import UpgradePlanModal from "@/components/dashboard/UpgradePlanModal";
 
@@ -8,6 +8,11 @@ type UploadTranscriptProps = {
   plan: string;
   uploadsUsed: number;
   onUploaded: () => void;
+};
+
+type CatalogModel = {
+  model_id: string;
+  provider: string;
 };
 
 const ALLOWED_EXTENSIONS = [".txt", ".md", ".markdown"];
@@ -31,12 +36,39 @@ export default function UploadTranscript({
 }: UploadTranscriptProps) {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
+  const [userReportedModel, setUserReportedModel] = useState("");
+  const [models, setModels] = useState<CatalogModel[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const atFreeLimit = plan === "free" && uploadsUsed >= FREE_UPLOAD_LIMIT;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadModels() {
+      try {
+        const response = await fetch("/api/models");
+        if (!response.ok) return;
+        const payload = (await response.json()) as { models: CatalogModel[] };
+        if (!cancelled) {
+          setModels(payload.models ?? []);
+        }
+      } finally {
+        if (!cancelled) {
+          setModelsLoading(false);
+        }
+      }
+    }
+
+    void loadModels();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const selected = event.target.files?.[0] ?? null;
@@ -56,6 +88,7 @@ export default function UploadTranscript({
         original_filename: file.name,
         content_type: contentType,
         file_size_bytes: file.size,
+        user_reported_model: userReportedModel || null,
       }),
     });
 
@@ -88,6 +121,7 @@ export default function UploadTranscript({
     setSuccess("Transcript uploaded. The worker will analyze it shortly.");
     setFile(null);
     setTitle("");
+    setUserReportedModel("");
     onUploaded();
   }
 
@@ -153,17 +187,52 @@ export default function UploadTranscript({
           />
         </div>
         <div>
+          <label htmlFor="model" className="block text-sm font-medium text-zinc-700">
+            AI model used (optional)
+          </label>
+          <select
+            id="model"
+            value={userReportedModel}
+            onChange={(event) => setUserReportedModel(event.target.value)}
+            disabled={modelsLoading}
+            className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <option value="">
+              {modelsLoading ? "Loading models..." : "Auto-detect / not sure"}
+            </option>
+            {models.map((model) => (
+              <option key={model.model_id} value={model.model_id}>
+                {model.model_id} ({model.provider})
+              </option>
+            ))}
+          </select>
+          <p className="mt-2 text-xs text-zinc-500">
+            Improves cost comparison when your transcript does not name the model.
+          </p>
+        </div>
+        <div>
           <label htmlFor="transcript" className="block text-sm font-medium text-zinc-700">
             Transcript file
           </label>
-          <input
-            id="transcript"
-            type="file"
-            accept=".txt,.md,.markdown,text/plain,text/markdown"
-            onChange={handleFileChange}
-            className="mt-1 block w-full text-sm text-zinc-600"
-          />
-          <p className="mt-1 text-xs text-zinc-500">
+          <div className="mt-2 rounded-lg border-2 border-dashed border-zinc-300 bg-zinc-50 px-4 py-5 transition hover:border-zinc-400 hover:bg-zinc-100/80">
+            <input
+              id="transcript"
+              type="file"
+              accept=".txt,.md,.markdown,text/plain,text/markdown"
+              onChange={handleFileChange}
+              className="block w-full cursor-pointer text-sm text-zinc-700 file:mr-4 file:rounded-md file:border file:border-zinc-300 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-zinc-800 hover:file:bg-zinc-50"
+            />
+            {file ? (
+              <p className="mt-3 text-sm font-medium text-zinc-900">
+                Selected: {file.name}
+              </p>
+            ) : (
+              <p className="mt-3 text-sm text-zinc-500">
+                Choose a .txt or .md file to upload
+              </p>
+            )}
+          </div>
+          <p className="mt-2 text-xs text-zinc-500">
             Plain text or markdown with lines like User: and Agent:
           </p>
         </div>

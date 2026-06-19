@@ -22,4 +22,7 @@ def get_settings() -> dict:
         "poll_interval_seconds": float(os.getenv("POLL_INTERVAL_SECONDS", "3")),
         "max_concurrent_jobs": int(os.getenv("MAX_CONCURRENT_JOBS", "2")),
         "reserved_output_tokens": int(os.getenv("RESERVED_OUTPUT_TOKENS", "4096")),
+        "model_catalog_cache_seconds": float(
+            os.getenv("MODEL_CATALOG_CACHE_SECONDS", "900")
+        ),
     }

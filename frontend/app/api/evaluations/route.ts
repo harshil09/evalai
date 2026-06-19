@@ -21,6 +21,7 @@ export async function POST(request: Request) {
     original_filename?: string;
     content_type?: string;
     file_size_bytes?: number;
+    user_reported_model?: string | null;
   };
 
   try {
@@ -56,12 +57,31 @@ export async function POST(request: Request) {
 
   const admin = createAdminClient();
 
+  const userReportedModel = body.user_reported_model?.trim() || null;
+
+  if (userReportedModel) {
+    const { data: modelRow, error: modelError } = await admin
+      .from("model_catalog")
+      .select("model_id")
+      .eq("model_id", userReportedModel)
+      .eq("active", true)
+      .maybeSingle();
+
+    if (modelError || !modelRow) {
+      return NextResponse.json(
+        { error: "Unknown or inactive model selected" },
+        { status: 400 },
+      );
+    }
+  }
+
   const { data, error } = await admin.rpc("create_evaluation_job", {
     p_user_id: user.id,
     p_title: body.title?.trim() || originalFilename,
     p_original_filename: originalFilename,
     p_content_type: contentType,
     p_file_size_bytes: fileSizeBytes,
+    p_user_reported_model: userReportedModel,
   });
 
   if (error) {

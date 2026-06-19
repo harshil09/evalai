@@ -187,15 +187,20 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Tokens</th>
+                <th className="px-4 py-3">AI score</th>
                 <th className="px-4 py-3 text-right">Downloads</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 bg-white">
               {evaluations.map((evaluation) => {
-                const summary = evaluation.evaluation_summary as {
-                  total_tokens?: number;
-                  best_fit_model?: string;
-                } | null;
+        const summary = evaluation.evaluation_summary as {
+          total_tokens?: number;
+          best_fit_model?: string;
+          user_evaluation?: {
+            overall_score?: number;
+            grade?: string;
+          };
+        } | null;
                 const displayName =
                   evaluation.title || evaluation.original_filename || "Untitled";
                 const isDownloadingTranscript =
@@ -241,6 +246,21 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
                       {evaluation.status === "completed" && summary?.total_tokens != null
                         ? summary.total_tokens.toLocaleString()
                         : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      {evaluation.status === "completed" &&
+                      summary?.user_evaluation?.overall_score != null ? (
+                        <div>
+                          <p className="font-medium text-zinc-900">
+                            {summary.user_evaluation.overall_score}%
+                          </p>
+                          <p className="text-xs text-zinc-500">
+                            {summary.user_evaluation.grade}
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="text-zinc-400">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col items-end gap-2 sm:flex-row sm:justify-end">

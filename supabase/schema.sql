@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS public.evaluations (
   content_type TEXT NOT NULL CHECK (content_type IN ('text/plain', 'text/markdown')),
   transcript_path TEXT NOT NULL,
   report_path TEXT,
+  user_reported_model TEXT,
   status TEXT NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
   error_message TEXT,

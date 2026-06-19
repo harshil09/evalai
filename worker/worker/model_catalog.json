@@ -40,5 +40,33 @@
     "context_window": 200000,
     "input_price_per_1m": 3.0,
     "encoding": "cl100k_base"
+  },
+  {
+    "model_id": "gemini-2.0-flash",
+    "provider": "Google",
+    "context_window": 1048576,
+    "input_price_per_1m": 0.1,
+    "encoding": "cl100k_base"
+  },
+  {
+    "model_id": "gemini-1.5-pro",
+    "provider": "Google",
+    "context_window": 2097152,
+    "input_price_per_1m": 1.25,
+    "encoding": "cl100k_base"
+  },
+  {
+    "model_id": "mistral-small",
+    "provider": "Mistral",
+    "context_window": 128000,
+    "input_price_per_1m": 0.2,
+    "encoding": "cl100k_base"
+  },
+  {
+    "model_id": "deepseek-chat",
+    "provider": "DeepSeek",
+    "context_window": 128000,
+    "input_price_per_1m": 0.14,
+    "encoding": "cl100k_base"
   }
 ]

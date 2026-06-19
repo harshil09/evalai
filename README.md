@@ -110,13 +110,18 @@ EvalAI/
 │   │   ├── processor.py      # Job pipeline
 │   │   ├── parser.py         # User/Agent turn parsing
 │   │   ├── analytics.py      # Token counts + model fit
+│   │   ├── model_catalog.py  # Supabase catalog loader + JSON fallback
+│   │   ├── app_settings.py   # Supabase settings loader + env fallback
 │   │   ├── charts.py         # matplotlib charts
 │   │   └── pdf_report.py     # PDF generation
 │   ├── Dockerfile            # Optional container deploy
 │   └── requirements.txt
 └── supabase/
     ├── schema.sql            # Tables, RLS, storage buckets
-    └── migration_worker.sql  # Job claim RPC, usage limits, Realtime
+    ├── migration_worker.sql  # Job claim RPC, usage limits, Realtime
+    ├── migration_model_catalog.sql  # model_catalog table + seed data
+    ├── migration_app_settings.sql   # app_settings key-value defaults
+    └── migration_user_reported_model.sql  # optional model on upload
 ```
 
 ---
@@ -130,6 +135,8 @@ EvalAI/
 | `profiles` | User plan (`free` / `pro`), subscription fields |
 | `evaluations` | Job queue + results (`pending` → `processing` → `completed` / `failed`) |
 | `usage_counters` | Monthly upload count per user (free tier) |
+| `model_catalog` | LLM pricing/context for worker cost & fit analysis (editable without redeploy) |
+| `app_settings` | Global worker knobs (default reference model, reserved tokens, cache TTL) |
 
 ### Storage buckets
 
@@ -156,8 +163,13 @@ In **Supabase Dashboard → SQL Editor**, run in order:
 
 1. `supabase/schema.sql`
 2. `supabase/migration_worker.sql`
+3. `supabase/migration_model_catalog.sql`
+4. `supabase/migration_app_settings.sql`
+5. `supabase/migration_user_reported_model.sql`
 
 Confirm **Realtime** is enabled for `evaluations` (included in migration).
+
+To update model prices in production, edit rows in `model_catalog` (SQL Editor or Table Editor). To change global defaults (reference model, reserved tokens, cache TTL), edit `app_settings`. The worker reloads from Supabase every 15 minutes by default (`model_catalog_cache_seconds`).
 
 **Auth → URL configuration:**
 

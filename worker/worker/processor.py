@@ -6,8 +6,8 @@ from supabase import Client
 
 #used for token analysis
 from worker.analytics import analyze_transcript
-
-from worker.config import get_settings
+from worker.app_settings import load_app_settings
+from worker.model_catalog import load_model_catalog
 
 #converts chat into structured objects 
 from worker.parser import parse_transcript
@@ -61,8 +61,6 @@ def mark_completed(
     report_path: str,
     summary: dict,
 ) -> None:
-    settings = get_settings()
-    summary["reserved_output_tokens"] = settings["reserved_output_tokens"]
     client.table("evaluations").update(
         {
             "status": "completed",
@@ -101,7 +99,25 @@ def process_evaluation(client: Client, job: dict) -> None:
         mark_failed(client, evaluation_id, "Transcript contained no parseable content")
         return
 
-    summary = analyze_transcript(turns, warnings)
+    user_reported_model = (job.get("user_reported_model") or "").strip() or None
+
+    app_settings, settings_meta = load_app_settings(client)
+    catalog, catalog_meta = load_model_catalog(
+        client,
+        cache_seconds=app_settings["model_catalog_cache_seconds"],
+    )
+    summary = analyze_transcript(
+        turns,
+        warnings,
+        catalog=catalog,
+        reserved_output_tokens=app_settings["reserved_output_tokens"],
+        default_reference_model=app_settings["default_reference_model"],
+        user_reported_model=user_reported_model,
+    )
+    summary["catalog_source"] = catalog_meta["source"]
+    summary["catalog_fetched_at"] = catalog_meta["fetched_at"]
+    summary["settings_source"] = settings_meta["source"]
+    summary["settings_fetched_at"] = settings_meta["fetched_at"]
     pdf_bytes = build_pdf_report(
         title=job.get("title") or filename,
         filename=filename,

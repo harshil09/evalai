@@ -49,6 +49,34 @@ def _fig_to_png(fig: plt.Figure) -> bytes:
     return buffer.read()
 
 
+def user_evaluation_bar_chart(dimensions: list[dict]) -> bytes:
+    if not dimensions:
+        return _empty_chart("No evaluation data")
+
+    labels = [item["label"] for item in dimensions]
+    scores = [item["score"] for item in dimensions]
+    bar_colors = [
+        "#16a34a" if score >= 75 else "#2563eb" if score >= 60 else "#f59e0b" if score >= 45 else "#dc2626"
+        for score in scores
+    ]
+
+    height = max(5.5, len(labels) * 0.42)
+    fig, ax = plt.subplots(figsize=(8, height))
+    y_pos = range(len(labels))
+    ax.barh(list(y_pos), scores, color=bar_colors, height=0.7)
+    ax.set_yticks(list(y_pos))
+    ax.set_yticklabels(labels, fontsize=9)
+    ax.set_xlim(0, 100)
+    ax.set_xlabel("Score (%)")
+    ax.set_title("How well the user uses AI tools", fontsize=11, fontweight="bold")
+    ax.axvline(x=75, color="#a1a1aa", linestyle="--", linewidth=1, alpha=0.8, label="Good (75%)")
+    for index, score in enumerate(scores):
+        ax.text(min(score + 1.2, 96), index, f"{score:.0f}%", va="center", fontsize=8)
+    ax.grid(axis="x", alpha=0.25)
+    fig.tight_layout()
+    return _fig_to_png(fig)
+
+
 def _empty_chart(message: str) -> bytes:
     fig, ax = plt.subplots(figsize=(6, 3))
     ax.text(0.5, 0.5, message, ha="center", va="center")

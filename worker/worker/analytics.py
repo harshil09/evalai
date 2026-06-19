@@ -1,12 +1,10 @@
-import json
-from pathlib import Path
-
 import tiktoken
 
 from worker.config import get_settings
+from worker.cost_analysis import build_cost_analysis
+from worker.model_catalog import load_model_catalog
 from worker.parser import Turn
-
-CATALOG_PATH = Path(__file__).parent / "model_catalog.json"
+from worker.user_evaluation import evaluate_user_ai_usage
 
 
 def _get_encoding(name: str) -> tiktoken.Encoding:
@@ -25,14 +23,22 @@ def count_turn_tokens(turns: list[Turn], encoding_name: str = "cl100k_base") -> 
     return [count_tokens(turn.content, encoding_name) for turn in turns]
 
 
-def load_model_catalog() -> list[dict]:
-    with CATALOG_PATH.open(encoding="utf-8") as handle:
-        return json.load(handle)
-
-
-def analyze_transcript(turns: list[Turn], parse_warnings: list[str]) -> dict:
+def analyze_transcript(
+    turns: list[Turn],
+    parse_warnings: list[str],
+    *,
+    catalog: list[dict] | None = None,
+    reserved_output_tokens: int | None = None,
+    default_reference_model: str | None = None,
+    user_reported_model: str | None = None,
+) -> dict:
     settings = get_settings()
-    reserved = settings["reserved_output_tokens"]
+    reserved = (
+        reserved_output_tokens
+        if reserved_output_tokens is not None
+        else settings["reserved_output_tokens"]
+    )
+    reference_model = default_reference_model or "gpt-4o"
     encoding_name = "cl100k_base"
 
     tokens_by_turn = count_turn_tokens(turns, encoding_name)
@@ -47,7 +53,8 @@ def analyze_transcript(turns: list[Turn], parse_warnings: list[str]) -> dict:
     max_turn_tokens = max(tokens_by_turn) if tokens_by_turn else 0
     avg_tokens = round(total_tokens / turn_count, 1) if turn_count else 0
 
-    catalog = load_model_catalog()
+    if catalog is None:
+        catalog, _ = load_model_catalog()
     recommendations: list[dict] = []
     for model in catalog:
         model_encoding = model.get("encoding", encoding_name)
@@ -72,6 +79,13 @@ def analyze_transcript(turns: list[Turn], parse_warnings: list[str]) -> dict:
 
     recommendations.sort(key=lambda item: (not item["fits"], item["est_input_cost_usd"]))
     best_fit = next((r for r in recommendations if r["fits"]), None)
+    cost_analysis = build_cost_analysis(
+        turns,
+        recommendations,
+        user_reported_model=user_reported_model,
+        default_reference_model=reference_model,
+    )
+    user_evaluation = evaluate_user_ai_usage(turns, recommendations, cost_analysis)
 
     return {
         "encoding_used": encoding_name,
@@ -91,5 +105,10 @@ def analyze_transcript(turns: list[Turn], parse_warnings: list[str]) -> dict:
         ],
         "model_recommendations": recommendations,
         "best_fit_model": best_fit["model_id"] if best_fit else None,
+        "cost_analysis": cost_analysis,
         "parse_warnings": parse_warnings,
+        "user_evaluation": user_evaluation,
+        "reserved_output_tokens": reserved,
+        "default_reference_model": reference_model,
+        "user_reported_model": (user_reported_model or "").strip() or None,
     }
