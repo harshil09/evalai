@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
+import DashboardTabs, { type DashboardTab } from "@/components/dashboard/DashboardTabs";
+import EvaluationHistory from "@/components/dashboard/EvaluationHistory";
+import UploadTranscript from "@/components/dashboard/UploadTranscript";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-type MeResponse = {
+type Profile = {
   id: string;
-  email: string | null;
+  email: string;
   first_name: string | null;
   last_name: string | null;
   plan: string;
@@ -16,64 +17,75 @@ type MeResponse = {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [profile, setProfile] = useState<MeResponse | null>(null);
+  const [activeTab, setActiveTab] = useState<DashboardTab>("upload");
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [usageCount, setUsageCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  useEffect(() => {
-    async function loadProfile() {
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+  const loadDashboard = useCallback(async () => {
+    const supabase = createClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-      if (!session) {
-        router.replace("/signin");
-        return;
-      }
-
-      const metadata = session.user.user_metadata ?? {};
-
-      setProfile({
-        id: session.user.id,
-        email: session.user.email ?? null,
-        first_name: metadata.first_name ?? null,
-        last_name: metadata.last_name ?? null,
-        plan: "free",
-      });
-      setLoading(false);
-
-      try {
-        const response = await fetch(`${API_URL}/auth/me`, {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        });
-
-        if (response.ok) {
-          const data = (await response.json()) as MeResponse;
-          setProfile(data);
-          setError(null);
-        } else {
-          setError(
-            "Signed in successfully, but the API could not load your profile. Make sure the backend is running and SUPABASE_URL is set in backend/.env.",
-          );
-        }
-      } catch {
-        setError(
-          "Signed in successfully, but the backend API is not reachable. Start it on port 8000.",
-        );
-      }
+    if (!session) {
+      router.replace("/signin");
+      return;
     }
 
-    loadProfile();
+    const { data: profileRow, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, email, first_name, last_name, plan")
+      .eq("id", session.user.id)
+      .single();
+
+    if (profileError || !profileRow) {
+      setError("Could not load your profile.");
+      setLoading(false);
+      return;
+    }
+
+    setProfile(profileRow);
+
+    const monthKey = new Date().toISOString().slice(0, 7);
+    const { data: usageRow } = await supabase
+      .from("usage_counters")
+      .select("upload_count")
+      .eq("user_id", session.user.id)
+      .eq("month_key", monthKey)
+      .maybeSingle();
+
+    setUsageCount(usageRow?.upload_count ?? 0);
+    setLoading(false);
   }, [router]);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard, refreshKey]);
+
+  useEffect(() => {
+    if (sessionStorage.getItem("upgradeSuccess") === "1") {
+      sessionStorage.removeItem("upgradeSuccess");
+      setSuccessMessage("Welcome to Pro! You can now upload unlimited transcripts.");
+      setRefreshKey((value) => value + 1);
+    }
+  }, []);
 
   async function handleSignOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/signin");
     router.refresh();
+  }
+
+  function handleUploaded() {
+    setRefreshKey((value) => value + 1);
+    setUsageCount((value) => (value ?? 0) + 1);
+    loadDashboard();
+    setActiveTab("history");
   }
 
   if (loading) {
@@ -85,47 +97,108 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-1 flex-col items-center justify-center bg-zinc-50 px-4 py-12">
-      <div className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-semibold text-zinc-900">Dashboard</h1>
-        <p className="mt-2 text-sm text-zinc-600">
-          You are signed in. JWT authentication is active between the frontend
-          and backend.
-        </p>
+    <div className="min-h-screen bg-zinc-50 px-4 py-10">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
+        <header className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-zinc-900">Dashboard</h1>
+            <p className="mt-1 text-sm text-zinc-600">
+              Upload chat transcripts for token analysis and PDF reports.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-50"
+          >
+            Sign out
+          </button>
+        </header>
 
         {error && (
-          <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
             {error}
           </p>
         )}
 
-        {profile && (
-          <dl className="mt-6 space-y-3 text-sm">
-            <div className="flex justify-between border-b border-zinc-100 pb-2">
-              <dt className="text-zinc-500">Name</dt>
-              <dd className="font-medium text-zinc-900">
-                {[profile.first_name, profile.last_name].filter(Boolean).join(" ") ||
-                  "—"}
-              </dd>
-            </div>
-            <div className="flex justify-between border-b border-zinc-100 pb-2">
-              <dt className="text-zinc-500">Email</dt>
-              <dd className="font-medium text-zinc-900">{profile.email}</dd>
-            </div>
-            <div className="flex justify-between border-b border-zinc-100 pb-2">
-              <dt className="text-zinc-500">Plan</dt>
-              <dd className="font-medium capitalize text-zinc-900">{profile.plan}</dd>
-            </div>
-          </dl>
+        {successMessage && (
+          <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+            {successMessage}
+          </p>
         )}
 
-        <button
-          type="button"
-          onClick={handleSignOut}
-          className="mt-8 w-full rounded-lg border border-zinc-300 px-4 py-2.5 text-sm font-medium text-zinc-900 transition hover:bg-zinc-50"
-        >
-          Sign out
-        </button>
+        {profile && (
+          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
+              Account
+            </h2>
+            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-zinc-500">Name</dt>
+                <dd className="font-medium text-zinc-900">
+                  {[profile.first_name, profile.last_name].filter(Boolean).join(" ") ||
+                    "—"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Email</dt>
+                <dd className="font-medium text-zinc-900">{profile.email}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Plan</dt>
+                <dd className="font-medium capitalize text-zinc-900">
+                  {profile.plan}
+                  {profile.plan === "pro" && (
+                    <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                      Active
+                    </span>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Uploads this month</dt>
+                <dd className="font-medium text-zinc-900">
+                  {usageCount ?? 0}
+                  {profile.plan === "free" ? " / 5" : " · unlimited"}
+                </dd>
+              </div>
+            </dl>
+          </section>
+        )}
+
+        <DashboardTabs activeTab={activeTab} onChange={setActiveTab} />
+
+        {activeTab === "upload" && (
+          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-zinc-900">New evaluation</h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              Upload a User / Agent transcript. The Python worker generates your PDF
+              report — view it in the History tab.
+            </p>
+            <div className="mt-4">
+              {profile && (
+                <UploadTranscript
+                  plan={profile.plan}
+                  uploadsUsed={usageCount ?? 0}
+                  onUploaded={handleUploaded}
+                />
+              )}
+            </div>
+          </section>
+        )}
+
+        {activeTab === "history" && (
+          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-zinc-900">Upload history</h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              All your transcripts and generated PDF reports. Download either file
+              anytime.
+            </p>
+            <div className="mt-4">
+              <EvaluationHistory refreshKey={refreshKey} />
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

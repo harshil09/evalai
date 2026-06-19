@@ -155,7 +155,7 @@ CREATE POLICY "Users can update own profile"
   USING (id = auth.uid())
   WITH CHECK (id = auth.uid());
 
--- evaluations (read only from client; writes via FastAPI service role)
+-- evaluations (read only from client; writes via Next.js / worker service role)
 DROP POLICY IF EXISTS "Users can read own evaluations" ON public.evaluations;
 CREATE POLICY "Users can read own evaluations"
   ON public.evaluations FOR SELECT

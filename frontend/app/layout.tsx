@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "TranscriptIQ",
-  description: "Upload transcripts and receive AI evaluation reports",
+  description: "Upload chat transcripts for token analysis and PDF reports",
 };
 
 export default function RootLayout({
