@@ -1,0 +1,42 @@
+# EvalAI worker pool — 5 containers × 2 concurrent jobs = up to 10 parallel evaluations.
+#
+# Prerequisites:
+#   1. Copy worker/.env.example → worker/.env and fill Supabase credentials.
+#   2. docker compose build
+#   3. docker compose up -d
+#
+# Logs:   docker compose logs -f
+# Stop:   docker compose down
+# Scale:  change the worker-1 … worker-5 services below, or duplicate a worker block.
+
+x-worker: &worker
+  build:
+    context: ./worker
+    dockerfile: Dockerfile
+  env_file:
+    - ./worker/.env
+  environment:
+    MAX_CONCURRENT_JOBS: "2"
+    POLL_INTERVAL_SECONDS: "3"
+  restart: unless-stopped
+
+services:
+  worker-1:
+    <<: *worker
+    container_name: evalai-worker-1
+
+  worker-2:
+    <<: *worker
+    container_name: evalai-worker-2
+
+  worker-3:
+    <<: *worker
+    container_name: evalai-worker-3
+
+  worker-4:
+    <<: *worker
+    container_name: evalai-worker-4
+
+  worker-5:
+    <<: *worker
+    container_name: evalai-worker-5

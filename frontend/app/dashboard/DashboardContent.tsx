@@ -34,7 +34,7 @@ export default function DashboardContent() {
     } = await supabase.auth.getSession();
 
     if (!session) {
-      router.replace("/auth");
+      router.replace("/signin");
       return;
     }
 
@@ -87,7 +87,7 @@ export default function DashboardContent() {
   async function handleSignOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/auth");
+    router.push("/signin");
     router.refresh();
   }
 
@@ -109,18 +109,21 @@ export default function DashboardContent() {
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-10">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+        <header className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm font-semibold text-violet-600">EvalAI</p>
-            <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-white sm:ml-auto"
+            >
+              Sign out
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleSignOut}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-white"
-          >
-            Sign out
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-8">
+            <h1 className="shrink-0 text-2xl font-bold text-slate-900">Dashboard</h1>
+            <DashboardTabs activeTab={activeTab} onChange={setActiveTab} />
+          </div>
         </header>
 
         {error && (
@@ -166,15 +169,14 @@ export default function DashboardContent() {
               <div>
                 <dt className="text-zinc-500">Uploads this month</dt>
                 <dd className="font-medium text-zinc-900">
-                  {usageCount ?? 0}
-                  {profile.plan === "free" ? " / 5" : " · unlimited"}
+                  {profile.plan === "free"
+                    ? `${usageCount ?? 0} / 5`
+                    : "Unlimited uploads"}
                 </dd>
               </div>
             </dl>
           </section>
         )}
-
-        <DashboardTabs activeTab={activeTab} onChange={setActiveTab} />
 
         {activeTab === "upload" && (
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

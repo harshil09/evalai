@@ -36,6 +36,8 @@ const STATUS_COLORS: Record<Evaluation["status"], string> = {
   failed: "bg-red-100 text-red-800",
 };
 
+const PAGE_SIZE = 5;
+
 function formatFileSize(bytes: number | null): string {
   if (bytes == null) return "—";
   if (bytes < 1024) return `${bytes} B`;
@@ -54,6 +56,8 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const loadEvaluations = useCallback(async () => {
     try {
@@ -72,6 +76,7 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
   }, []);
 
   useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
     loadEvaluations();
   }, [loadEvaluations, refreshKey]);
 
@@ -135,6 +140,38 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
     };
   }, [loadEvaluations]);
 
+  async function deleteEvaluation(evaluationId: string, displayName: string) {
+    const confirmed = window.confirm(
+      `Delete "${displayName}"? This removes the transcript, PDF report, and record permanently.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingId(evaluationId);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/evaluations/${evaluationId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(
+          (payload as { error?: string }).error || "Could not delete evaluation",
+        );
+      }
+
+      setEvaluations((current) =>
+        current.filter((evaluation) => evaluation.id !== evaluationId),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   async function downloadFile(
     evaluationId: string,
     type: "transcript" | "report",
@@ -175,6 +212,9 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
     }
   }
 
+  const visibleEvaluations = evaluations.slice(0, visibleCount);
+  const hasMore = visibleCount < evaluations.length;
+
   if (loading) {
     return <p className="text-sm text-zinc-500">Loading history...</p>;
   }
@@ -208,7 +248,7 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
 
       <div className="overflow-hidden rounded-xl border border-zinc-200">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-left text-sm">
+          <table className="w-full min-w-[560px] text-left text-sm">
             <thead className="border-b border-zinc-200 bg-zinc-50 text-xs font-semibold uppercase tracking-wide text-zinc-500">
               <tr>
                 <th className="px-4 py-3">Transcript</th>
@@ -216,42 +256,18 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Tokens</th>
-                <th className="px-4 py-3">AI score</th>
                 <th className="px-4 py-3">Efficiency</th>
-                <th className="px-4 py-3">Est. savings</th>
-                <th className="px-4 py-3 text-right">Downloads</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 bg-white">
-              {evaluations.map((evaluation) => {
+              {visibleEvaluations.map((evaluation) => {
         const summary = evaluation.evaluation_summary as {
           total_tokens?: number;
-          best_fit_model?: string;
-          user_evaluation?: {
-            overall_score?: number;
-            grade?: string;
-          };
           prompting_recommendations?: {
             prompt_efficiency?: {
               efficiency_score?: number;
               grade?: string;
-            };
-            optimized_session?: {
-              savings_tokens?: number;
-              savings_percent?: number;
-            };
-            token_savings_estimate?: {
-              savings_tokens?: number;
-              savings_percent?: number;
-            };
-            task_type?: {
-              label?: string;
-            };
-            model_advice?: {
-              tier_recommended_model?: string;
-            };
-            tiered_model_picks?: {
-              picks?: Array<{ model_id: string; label: string }>;
             };
           };
         } | null;
@@ -261,6 +277,7 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
                   downloadingId === `${evaluation.id}-transcript`;
                 const isDownloadingReport =
                   downloadingId === `${evaluation.id}-report`;
+                const isDeleting = deletingId === evaluation.id;
 
                 return (
                   <tr key={evaluation.id} className="align-top">
@@ -303,21 +320,6 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
                     </td>
                     <td className="px-4 py-3">
                       {evaluation.status === "completed" &&
-                      summary?.user_evaluation?.overall_score != null ? (
-                        <div>
-                          <p className="font-medium text-zinc-900">
-                            {summary.user_evaluation.overall_score}%
-                          </p>
-                          <p className="text-xs text-zinc-500">
-                            {summary.user_evaluation.grade}
-                          </p>
-                        </div>
-                      ) : (
-                        <span className="text-zinc-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {evaluation.status === "completed" &&
                       summary?.prompting_recommendations?.prompt_efficiency
                         ?.efficiency_score != null ? (
                         <div>
@@ -331,51 +333,6 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
                           <p className="text-xs text-zinc-500">
                             {summary.prompting_recommendations.prompt_efficiency.grade}
                           </p>
-                        </div>
-                      ) : (
-                        <span className="text-zinc-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {evaluation.status === "completed" &&
-                      ((summary?.prompting_recommendations?.optimized_session?.savings_tokens ??
-                        0) > 0 ||
-                        (summary?.prompting_recommendations?.token_savings_estimate
-                          ?.savings_tokens ?? 0) > 0) ? (
-                        <div>
-                          <p className="font-medium text-zinc-900">
-                            {(summary?.prompting_recommendations?.optimized_session
-                              ?.savings_percent ??
-                              summary?.prompting_recommendations?.token_savings_estimate
-                                ?.savings_percent ??
-                              0)}
-                            %
-                          </p>
-                          <p className="text-xs text-zinc-500">
-                            {(summary?.prompting_recommendations?.optimized_session
-                              ?.savings_tokens ??
-                              summary?.prompting_recommendations?.token_savings_estimate
-                                ?.savings_tokens ??
-                              0).toLocaleString()}{" "}
-                            tokens
-                          </p>
-                          {(summary?.prompting_recommendations?.tiered_model_picks?.picks?.[1]
-                            ?.model_id ||
-                            summary?.prompting_recommendations?.model_advice
-                              ?.tier_recommended_model) && (
-                            <p className="text-xs text-zinc-500">
-                              →{" "}
-                              {summary.prompting_recommendations.tiered_model_picks?.picks?.[1]
-                                ?.model_id ??
-                                summary.prompting_recommendations.model_advice
-                                  ?.tier_recommended_model}
-                            </p>
-                          )}
-                          {summary?.prompting_recommendations?.task_type?.label && (
-                            <p className="text-xs text-zinc-400">
-                              {summary.prompting_recommendations.task_type.label}
-                            </p>
-                          )}
                         </div>
                       ) : (
                         <span className="text-zinc-400">—</span>
@@ -401,6 +358,14 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
                         >
                           {isDownloadingReport ? "Loading..." : "PDF report"}
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteEvaluation(evaluation.id, displayName)}
+                          disabled={isDeleting}
+                          className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {isDeleting ? "Deleting..." : "Delete"}
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -411,9 +376,22 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
         </div>
       </div>
 
+      {hasMore && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+            className="rounded-lg border border-zinc-300 bg-white px-5 py-2.5 text-sm font-medium text-zinc-800 transition hover:bg-zinc-50"
+          >
+            Load more
+          </button>
+        </div>
+      )}
+
       <p className="text-xs text-zinc-500">
-        {evaluations.length} upload{evaluations.length === 1 ? "" : "s"} in your history.
-        PDF reports are available when status is Completed.
+        Showing {visibleEvaluations.length} of {evaluations.length} upload
+        {evaluations.length === 1 ? "" : "s"} in your history. PDF reports are available
+        when status is Completed.
       </p>
     </div>
   );

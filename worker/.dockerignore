@@ -1,0 +1,11 @@
+.venv
+__pycache__
+*.py[cod]
+*.pyo
+.pytest_cache
+.worker.lock
+.env
+.env.*
+!.env.example
+tests/
+scripts/

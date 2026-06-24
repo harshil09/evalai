@@ -25,15 +25,17 @@ export const createClient = async () => {
   });
 };
 
-/** Cookie/JWT auth — no round-trip to Supabase Auth (avoids timeouts under load). */
+/** Validates session via Supabase Auth and returns the user id. */
 export async function getAuthUserId(): Promise<string | null> {
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.getClaims();
-  const userId = data?.claims?.sub;
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
 
-  if (error || typeof userId !== "string" || !userId) {
+  if (error || !user?.id) {
     return null;
   }
 
-  return userId;
+  return user.id;
 }

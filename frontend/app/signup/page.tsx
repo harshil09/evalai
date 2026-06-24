@@ -1,5 +1,16 @@
-import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import SignUpPage from "./SignUpPage";
 
-export default function SignUpPage() {
-  redirect("/auth?tab=signup");
+export default function Page() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-600">
+          Loading...
+        </div>
+      }
+    >
+      <SignUpPage />
+    </Suspense>
+  );
 }

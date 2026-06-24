@@ -207,6 +207,21 @@ python -m worker.main
 
 You should see: `Worker started (poll=3s, max_concurrent=2)`.
 
+### 3b. Worker pool (Docker Compose — 5 workers, 2 jobs each)
+
+For batch uploads (e.g. 40 transcripts), run **5 worker containers**. Each container processes up to **2 jobs in parallel**, so up to **10 evaluations at once**.
+
+```bash
+# From repo root — ensure worker/.env exists (see step 3)
+docker compose build
+docker compose up -d
+docker compose ps          # should list evalai-worker-1 … evalai-worker-5
+docker compose logs -f     # tail all worker logs
+docker compose down        # stop the pool
+```
+
+Stop any local `python -m worker.main` process before starting Docker workers (same Supabase queue).
+
 ### 4. Test
 
 1. Sign up / sign in.
@@ -243,7 +258,7 @@ You should see: `Worker started (poll=3s, max_concurrent=2)`.
 | Part | Platform | Notes |
 |------|----------|-------|
 | **Frontend** | [Vercel](https://vercel.com) | Root directory: `frontend` |
-| **Worker** | [Railway](https://railway.app) or [Render](https://render.com) | Root directory: `worker`; plain Python or Docker |
+| **Worker** | [Railway](https://railway.app), [Render](https://render.com), or **Docker Compose** | Root: `worker`; or `docker compose up` from repo root (5 replicas) |
 | **Database / Auth / Storage** | Supabase | Run SQL migrations; set production auth redirect URLs |
 
 **Do not deploy the worker on Vercel** — it needs a long-running process.

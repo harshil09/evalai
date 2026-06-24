@@ -36,15 +36,16 @@ export async function updateSession(request: NextRequest) {
       },
     });
 
-    // Do not run code between createServerClient and getClaims().
-    const { data, error } = await supabase.auth.getClaims();
-    const isAuthenticated = !error && Boolean(data?.claims?.sub);
+    // Do not run code between createServerClient and getUser().
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
     const { pathname } = request.nextUrl;
 
-    if (!isAuthenticated && pathname.startsWith("/dashboard")) {
+    if (!user && pathname.startsWith("/dashboard")) {
       const url = request.nextUrl.clone();
-      url.pathname = "/auth";
+      url.pathname = "/signin";
       const redirectResponse = NextResponse.redirect(url);
       supabaseResponse.cookies.getAll().forEach(({ name, value }) => {
         redirectResponse.cookies.set(name, value);
