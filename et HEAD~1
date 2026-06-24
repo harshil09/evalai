@@ -1,0 +1,86 @@
+[33mcommit 74b54e4380bc91d2cd80b6edc1ad8e18c8dd6b25[m
+Author: harshil09 <harshilsoni757@gmail.com>
+Date:   Wed Jun 24 11:43:15 2026 +0530
+
+    new files updated
+
+[1mdiff --git a/.gitignore b/.gitignore[m
+[1mindex 8bfcd9a..bde2e5b 100644[m
+[1m--- a/.gitignore[m
+[1m+++ b/.gitignore[m
+[36m@@ -69,6 +69,9 @@[m [myarn-error.log*[m
+ !.yarn/releases[m
+ !.yarn/versions[m
+ [m
+[32m+[m[32m# Worker runtime[m
+[32m+[m[32mworker/.worker.lock[m
+[32m+[m
+ # Misc[m
+ *.pem[m
+ .vercel[m
+[1mdiff --git a/README.md b/README.md[m
+[1mindex 7a035d8..7b4646b 100644[m
+[1m--- a/README.md[m
+[1m+++ b/README.md[m
+[36m@@ -1,4 +1,4 @@[m
+[31m-# TranscriptIQ (EvalAI)[m
+[32m+[m[32m# EvalAI[m
+ [m
+ Upload chat transcripts between a **user** and an **agent**, get deterministic **token analysis** (no LLM), and download a **PDF report** with statistics and charts.[m
+ [m
+[36m@@ -20,7 +20,9 @@[m [mBuilt with **Next.js**, **Supabase**, and a **Python background worker**.[m
+    - **Free:** 5 uploads per calendar month[m
+    - **Pro:** Unlimited uploads (dummy checkout flow for demo)[m
+ [m
+[31m-Analysis is **rule-based** using [tiktoken](https://github.com/openai/tiktoken) — no LLM calls at report time.[m
+[32m+[m[32mAnalysis is **rule-based** using [tiktoken](https://github.com/openai/tiktoken). Optional **LLM coaching** (`ENABLE_LLM_COACH=true` on the worker) enriches flagged turns only — it never blocks job completion.[m
+[32m+[m
+[32m+[m[32mSet `OPENROUTER_API_KEY` in `worker/.env` when enabling the hybrid LLM coach stage (uses [OpenRouter](https://openrouter.ai/) with OpenAI-compatible models).[m
+ [m
+ ---[m
+ [m
+[36m@@ -263,10 +265,15 @@[m [mSee `worker/README.md` for worker-specific details.[m
+ |--------|----------------|[m
+ | `main.py` | Infinite poll loop, thread pool, stale-job recovery |[m
+ | `processor.py` | Download transcript, orchestrate pipeline, upload PDF |[m
+[31m-| `parser.py` | Split `User:` / `Agent:` (and variants) into turns |[m
+[31m-| `analytics.py` | Token counts, per-turn stats, model catalog ranking |[m
+[31m-| `charts.py` | Bar chart (tokens/turn), pie chart (role share) |[m
+[31m-| `pdf_report.py` | Assemble PDF with tables and embedded charts |[m
+[32m+[m[32m| `parser.py` | Split transcripts into user/agent turns |[m
+[32m+[m[32m| `analytics.py` | Token counts, model ranking, cost analysis orchestration |[m
+[32m+[m[32m| `user_evaluation.py` | Twelve-skill heuristic scoring (incl. redundancy detection) |[m
+[32m+[m[32m| `prompting_coach.py` | Hybrid coach: rules → similarity → optional LLM enrichment |[m
+[32m+[m[32m| `similarity.py` | All-pairs lexical/semantic redundancy detection |[m
+[32m+[m[32m| `openrouter_client.py` | OpenRouter API client for optional LLM/embeddings |[m
+[32m+[m[32m| `llm_coach.py` | Optional structured turn coaching via OpenRouter (feature-flagged) |[m
+[32m+[m[32m| `charts.py` | Bar, pie, and Nightingale (rose) charts |[m
+[32m+[m[32m| `pdf_report.py` | **AI Tool usage analyzer** PDF with readable tables and charts |[m
+ [m
+ ---[m
+ [m
+[1mdiff --git a/frontend/app/api/backup/route.ts b/frontend/app/api/backup/route.ts[m
+[1mnew file mode 100644[m
+[1mindex 0000000..6894166[m
+[1m--- /dev/null[m
+[1m+++ b/frontend/app/api/backup/route.ts[m
+[36m@@ -0,0 +1,139 @@[m
+[32m+[m[32mimport JSZip from "jszip";[m
+[32m+[m[32mimport { NextResponse } from "next/server";[m
+[32m+[m
+[32m+[m[32mimport { createClient, getAuthUserId } from "@/utils/supabase/server";[m
+[32m+[m[32mimport { createAdminClient } from "@/utils/supabase/admin";[m
+[32m+[m
+[32m+[m[32mexport const runtime = "nodejs";[m
+[32m+[m
+[32m+[m[32mtype EvaluationRow = {[m
+[32m+[m[32m  id: string;[m
+[32m+[m[32m  title: string | null;[m
+[32m+[m[32m  original_filename: string | null;[m
+[32m+[m[32m  content_type: string;[m
+[32m+[m[32m  transcript_path: string;[m
+[32m+[m[32m  report_path: string | null;[m
+[32m+[m[32m  status: string;[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32mfunction sanitizeF
