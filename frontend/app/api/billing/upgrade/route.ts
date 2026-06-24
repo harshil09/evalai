@@ -1,15 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { createClient } from "@/utils/supabase/server";
+import { getAuthUserId } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 
 export async function POST() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const userId = await getAuthUserId();
 
-  if (!user) {
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -21,7 +18,7 @@ export async function POST() {
       subscription_status: "active",
       pro_since: new Date().toISOString(),
     })
-    .eq("id", user.id)
+    .eq("id", userId)
     .select("id, plan, subscription_status, pro_since")
     .single();
 

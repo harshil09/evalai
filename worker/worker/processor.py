@@ -10,9 +10,10 @@ from worker.app_settings import load_app_settings
 from worker.model_catalog import load_model_catalog
 
 #converts chat into structured objects 
-from worker.parser import parse_transcript
+from worker.parser import is_cursor_markdown_export, parse_transcript
 #Imports PDF generator.
 from worker.pdf_report import build_pdf_report
+from worker.version import REPORT_FORMAT_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,16 @@ def process_evaluation(client: Client, job: dict) -> None:
         mark_failed(client, evaluation_id, "Transcript contained no parseable content")
         return
 
+    agent_turns = sum(1 for turn in turns if turn.role == "agent")
+    if is_cursor_markdown_export(text) and agent_turns == 0:
+        mark_failed(
+            client,
+            evaluation_id,
+            "Cursor markdown export was not split into user/agent turns. "
+            "Stop any old worker deployments and restart the local worker with the latest code.",
+        )
+        return
+
     user_reported_model = (job.get("user_reported_model") or "").strip() or None
 
     app_settings, settings_meta = load_app_settings(client)
@@ -113,7 +124,14 @@ def process_evaluation(client: Client, job: dict) -> None:
         reserved_output_tokens=app_settings["reserved_output_tokens"],
         default_reference_model=app_settings["default_reference_model"],
         user_reported_model=user_reported_model,
+        use_llm=bool(app_settings.get("enable_llm_coach")),
+        llm_coach_model=app_settings.get("llm_coach_model", "openai/gpt-4o-mini"),
+        embedding_model=app_settings.get(
+            "embedding_model", "openai/text-embedding-3-small"
+        ),
     )
+    summary["report_format_version"] = REPORT_FORMAT_VERSION
+    summary["enable_llm_coach"] = bool(app_settings.get("enable_llm_coach"))
     summary["catalog_source"] = catalog_meta["source"]
     summary["catalog_fetched_at"] = catalog_meta["fetched_at"]
     summary["settings_source"] = settings_meta["source"]

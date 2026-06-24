@@ -4,26 +4,88 @@ import Link from "next/link";
 import { useState } from "react";
 
 type AuthLayoutProps = {
-  title: string;
-  subtitle: string;
   children: React.ReactNode;
-  footer: React.ReactNode;
+  footer?: React.ReactNode;
 };
 
-export function AuthLayout({ title, subtitle, children, footer }: AuthLayoutProps) {
+function ShieldLogo() {
   return (
-    <div className="flex min-h-screen flex-1 items-center justify-center bg-zinc-50 px-4 py-12">
-      <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
+    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-600 shadow-sm">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="white"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-7 w-7"
+        aria-hidden="true"
+      >
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        <path d="m9 12 2 2 4-4" />
+      </svg>
+    </div>
+  );
+}
+
+export function AuthLayout({ children, footer }: AuthLayoutProps) {
+  return (
+    <div className="flex min-h-screen flex-1 items-center justify-center bg-slate-50 px-4 py-12">
+      <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <Link href="/" className="text-sm font-semibold tracking-wide text-zinc-900">
-            TranscriptIQ
-          </Link>
-          <h1 className="mt-4 text-2xl font-semibold text-zinc-900">{title}</h1>
-          <p className="mt-2 text-sm text-zinc-600">{subtitle}</p>
+          <ShieldLogo />
+          <h1 className="mt-4 text-3xl font-bold tracking-tight text-slate-900">
+            EvalAI
+          </h1>
+          <p className="mt-2 text-sm text-slate-500">
+            Find out how efficiently you really use AI tools
+          </p>
         </div>
-        {children}
-        <div className="mt-6 text-center text-sm text-zinc-600">{footer}</div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          {children}
+        </div>
+        {footer && (
+          <div className="mt-6 text-center text-sm text-slate-500">{footer}</div>
+        )}
       </div>
+    </div>
+  );
+}
+
+type AuthTab = "signin" | "signup";
+
+export function AuthTabs({
+  active,
+  onChange,
+}: {
+  active: AuthTab;
+  onChange: (tab: AuthTab) => void;
+}) {
+  return (
+    <div className="mb-6 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+      <button
+        type="button"
+        onClick={() => onChange("signin")}
+        className={`rounded-lg px-4 py-2.5 text-sm font-medium transition ${
+          active === "signin"
+            ? "bg-white text-slate-900 shadow-sm"
+            : "text-slate-500 hover:text-slate-700"
+        }`}
+      >
+        Sign In
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("signup")}
+        className={`rounded-lg px-4 py-2.5 text-sm font-medium transition ${
+          active === "signup"
+            ? "bg-white text-slate-900 shadow-sm"
+            : "text-slate-500 hover:text-slate-700"
+        }`}
+      >
+        Sign Up
+      </button>
     </div>
   );
 }
@@ -36,6 +98,7 @@ type AuthFieldProps = {
   onChange: (value: string) => void;
   autoComplete?: string;
   required?: boolean;
+  placeholder?: string;
 };
 
 export function AuthField({
@@ -46,10 +109,11 @@ export function AuthField({
   onChange,
   autoComplete,
   required = true,
+  placeholder,
 }: AuthFieldProps) {
   return (
     <div>
-      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-zinc-700">
+      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-slate-700">
         {label}
       </label>
       <input
@@ -59,7 +123,8 @@ export function AuthField({
         onChange={(e) => onChange(e.target.value)}
         autoComplete={autoComplete}
         required={required}
-        className="w-full rounded-lg border border-zinc-300 px-3 py-2.5 text-sm text-zinc-900 outline-none transition focus:border-zinc-900 focus:ring-2 focus:ring-zinc-200"
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
       />
     </div>
   );
@@ -112,6 +177,7 @@ type PasswordFieldProps = {
   onChange: (value: string) => void;
   autoComplete?: string;
   required?: boolean;
+  placeholder?: string;
 };
 
 export function PasswordField({
@@ -121,12 +187,13 @@ export function PasswordField({
   onChange,
   autoComplete,
   required = true,
+  placeholder = "••••••••",
 }: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
 
   return (
     <div>
-      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-zinc-700">
+      <label htmlFor={id} className="mb-1.5 block text-sm font-medium text-slate-700">
         {label}
       </label>
       <div className="relative">
@@ -137,12 +204,13 @@ export function PasswordField({
           onChange={(e) => onChange(e.target.value)}
           autoComplete={autoComplete}
           required={required}
-          className="w-full rounded-lg border border-zinc-300 py-2.5 pl-3 pr-10 text-sm text-zinc-900 outline-none transition focus:border-zinc-900 focus:ring-2 focus:ring-zinc-200"
+          placeholder={placeholder}
+          className="w-full rounded-lg border border-slate-300 py-2.5 pl-3 pr-10 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
         />
         <button
           type="button"
           onClick={() => setVisible((current) => !current)}
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-zinc-500 transition hover:text-zinc-900"
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-500 transition hover:text-slate-900"
           aria-label={visible ? "Hide password" : "Show password"}
         >
           {visible ? <EyeOffIcon /> : <EyeIcon />}
@@ -189,9 +257,28 @@ export function AuthSubmitButton({
     <button
       type="submit"
       disabled={loading}
-      className="w-full rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+      className="w-full rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {loading ? "Please wait..." : label}
     </button>
+  );
+}
+
+export function AuthFooterLink({
+  prompt,
+  href,
+  linkText,
+}: {
+  prompt: string;
+  href: string;
+  linkText: string;
+}) {
+  return (
+    <>
+      {prompt}{" "}
+      <Link href={href} className="font-medium text-violet-600 hover:text-violet-700">
+        {linkText}
+      </Link>
+    </>
   );
 }

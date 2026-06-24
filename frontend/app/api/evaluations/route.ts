@@ -1,18 +1,15 @@
 import { NextResponse } from "next/server";
 
-import { createClient } from "@/utils/supabase/server";
+import { createClient, getAuthUserId } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 
 const ALLOWED_TYPES = new Set(["text/plain", "text/markdown"]);
 const MAX_BYTES = 2 * 1024 * 1024;
 
 export async function POST(request: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const userId = await getAuthUserId();
 
-  if (!user) {
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -76,7 +73,7 @@ export async function POST(request: Request) {
   }
 
   const { data, error } = await admin.rpc("create_evaluation_job", {
-    p_user_id: user.id,
+    p_user_id: userId,
     p_title: body.title?.trim() || originalFilename,
     p_original_filename: originalFilename,
     p_content_type: contentType,
@@ -105,19 +102,21 @@ export async function POST(request: Request) {
 }
 
 export async function GET() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const userId = await getAuthUserId();
 
-  if (!user) {
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const supabase = await createClient();
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
   const { data, error } = await supabase
     .from("evaluations")
     .select("*")
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
+    .gte("created_at", sevenDaysAgo.toISOString())
     .order("created_at", { ascending: false });
 
   if (error) {

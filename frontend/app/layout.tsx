@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TranscriptIQ",
+  title: "EvalAI",
   description: "Upload chat transcripts for token analysis and PDF reports",
 };
 

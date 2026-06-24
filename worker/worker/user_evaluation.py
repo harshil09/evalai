@@ -82,6 +82,39 @@ ONE_SHOT_EXPECTATION = re.compile(
     re.I,
 )
 
+DIMENSION_DESCRIPTIONS: dict[str, str] = {
+    "ai_limitations": (
+        "Good AI users know AI can make mistakes, hallucinate, and need verification."
+    ),
+    "problem_decomposition": (
+        "Strong users break big problems into smaller tasks."
+    ),
+    "tool_choice": "A good user knows which tool fits.",
+    "iteration": "Good users don't expect the first output to be perfect.",
+    "context_management": (
+        'Advanced users give AI context. Bad: "Fix this code". '
+        'Good: "This is a FastAPI project. Error during login. Here is the structure and log."'
+    ),
+    "technical_knowledge": (
+        "AI is more powerful when combined with domain knowledge."
+    ),
+    "verification_debugging": "Good AI users know how to debug AI output.",
+    "automation": "Advanced users connect AI with workflows.",
+    "agent_understanding": (
+        'Understanding agents improves prompting. Basic: "Answer customer questions". '
+        'Advanced: "Build an agent that retrieves data, checks orders, and creates tickets."'
+    ),
+    "privacy": (
+        "Don't put sensitive data into AI — passwords, private customer data, company secrets."
+    ),
+    "output_quality": (
+        "Good AI users evaluate accuracy, relevance, speed, cost, and reliability."
+    ),
+    "redundancy_detection": (
+        "Detects when a prompt repeats the same intent as earlier turns, wasting tokens."
+    ),
+}
+
 
 def _clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
     return max(low, min(high, value))
@@ -320,6 +353,23 @@ def _score_output_quality(user_turns: list[Turn]) -> tuple[float, str]:
     return round(score, 1), note
 
 
+def _score_redundancy_detection(user_turns: list[Turn]) -> tuple[float, str]:
+    from worker.similarity import redundancy_matrix, redundancy_score_from_edges
+
+    if len(user_turns) < 2:
+        return 85.0, "Not enough user turns to assess redundancy."
+
+    edges = redundancy_matrix(user_turns, use_embeddings=False, threshold=0.55)
+    score = redundancy_score_from_edges(len(user_turns), edges)
+    if score >= 75:
+        note = "User prompts show little repeated intent across the session."
+    elif score >= 55:
+        note = "Some prompts repeat earlier context — reference prior turns instead."
+    else:
+        note = "Multiple prompts repeat the same intent — consolidate or reference earlier turns."
+    return score, note
+
+
 def _cost_comparison(cost_analysis: dict) -> dict:
     """Legacy shape for PDF sections that read user_eval.cost_comparison."""
     if not cost_analysis or not cost_analysis.get("reference_model"):
@@ -374,7 +424,6 @@ def evaluate_user_ai_usage(
     user_turns = _user_turns(turns)
 
     scorers = [
-        ("prompting_skills", "Prompting skills", _score_prompting_skills(user_turns)),
         (
             "ai_limitations",
             "Understanding AI limitations",
@@ -410,6 +459,11 @@ def evaluate_user_ai_usage(
         ),
         ("privacy", "Data privacy awareness", _score_privacy(user_turns)),
         ("output_quality", "Measuring output quality", _score_output_quality(user_turns)),
+        (
+            "redundancy_detection",
+            "Redundancy detection",
+            _score_redundancy_detection(user_turns),
+        ),
     ]
 
     dimensions = [
@@ -417,6 +471,7 @@ def evaluate_user_ai_usage(
             "id": dim_id,
             "label": label,
             "score": score,
+            "description": DIMENSION_DESCRIPTIONS.get(dim_id, ""),
             "detail": detail,
         }
         for dim_id, label, (score, detail) in scorers
@@ -455,7 +510,7 @@ def evaluate_user_ai_usage(
         "cost_comparison": cost_comparison,
         "methodology": (
             "Twelve-skill heuristic analysis of user messages (no LLM). "
-            "Signals include prompting structure, verification language, decomposition, "
-            "iteration, domain vocabulary, privacy patterns, and output-quality checks."
+            "Signals include verification language, decomposition, iteration, "
+            "domain vocabulary, privacy patterns, output-quality checks, and redundancy."
         ),
     }

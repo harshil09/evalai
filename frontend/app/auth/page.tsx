@@ -1,7 +1,7 @@
 import { Suspense } from "react";
-import DashboardContent from "./DashboardContent";
+import AuthPage from "./AuthPage";
 
-export default function DashboardPage() {
+export default function Page() {
   return (
     <Suspense
       fallback={
@@ -10,7 +10,7 @@ export default function DashboardPage() {
         </div>
       }
     >
-      <DashboardContent />
+      <AuthPage />
     </Suspense>
   );
 }

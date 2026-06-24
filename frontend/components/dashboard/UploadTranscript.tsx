@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import UpgradePlanModal from "@/components/dashboard/UpgradePlanModal";
 
@@ -8,11 +8,6 @@ type UploadTranscriptProps = {
   plan: string;
   uploadsUsed: number;
   onUploaded: () => void;
-};
-
-type CatalogModel = {
-  model_id: string;
-  provider: string;
 };
 
 const ALLOWED_EXTENSIONS = [".txt", ".md", ".markdown"];
@@ -29,16 +24,47 @@ function detectContentType(file: File): string | null {
   return null;
 }
 
+function validateFile(file: File): string | null {
+  const contentType = detectContentType(file);
+  if (!contentType) {
+    return `${file.name}: only .txt and .md files are supported.`;
+  }
+  const extensionOk = ALLOWED_EXTENSIONS.some((ext) =>
+    file.name.toLowerCase().endsWith(ext),
+  );
+  if (!extensionOk) {
+    return `${file.name}: only .txt and .md files are supported.`;
+  }
+  return null;
+}
+
+function CloudUploadIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      className="mx-auto h-10 w-10 text-violet-500"
+      aria-hidden="true"
+    >
+      <path d="M12 16V4m0 0 7 7m-7-7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M4 18.5A4.5 4.5 0 0 0 8.5 23h7A4.5 4.5 0 0 0 20 18.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export default function UploadTranscript({
   plan,
   uploadsUsed,
   onUploaded,
 }: UploadTranscriptProps) {
-  const [file, setFile] = useState<File | null>(null);
-  const [title, setTitle] = useState("");
-  const [userReportedModel, setUserReportedModel] = useState("");
-  const [models, setModels] = useState<CatalogModel[]>([]);
-  const [modelsLoading, setModelsLoading] = useState(true);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -47,60 +73,52 @@ export default function UploadTranscript({
   const atFreeLimit = plan === "free" && uploadsUsed >= FREE_UPLOAD_LIMIT;
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadModels() {
-      try {
-        const response = await fetch("/api/models");
-        if (!response.ok) return;
-        const payload = (await response.json()) as { models: CatalogModel[] };
-        if (!cancelled) {
-          setModels(payload.models ?? []);
-        }
-      } finally {
-        if (!cancelled) {
-          setModelsLoading(false);
-        }
-      }
+    if (atFreeLimit) {
+      setShowUpgradeModal(true);
     }
+  }, [atFreeLimit]);
 
-    void loadModels();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  function handleChooseFile() {
+    if (atFreeLimit) {
+      setShowUpgradeModal(true);
+      return;
+    }
+    inputRef.current?.click();
+  }
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const selected = event.target.files?.[0] ?? null;
-    setFile(selected);
+    const selected = Array.from(event.target.files ?? []);
+    setFiles(selected);
     setError(null);
     setSuccess(null);
   }
 
-  async function uploadFile(contentType: string) {
-    if (!file) return;
+  async function uploadSingleFile(file: File): Promise<"ok" | "limit"> {
+    const contentType = detectContentType(file);
+    if (!contentType) {
+      throw new Error(`${file.name}: unsupported file type.`);
+    }
 
     const createResponse = await fetch("/api/evaluations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        title: title.trim() || file.name,
+        title: file.name,
         original_filename: file.name,
         content_type: contentType,
         file_size_bytes: file.size,
-        user_reported_model: userReportedModel || null,
+        user_reported_model: null,
       }),
     });
 
     const createPayload = await createResponse.json();
 
     if (createResponse.status === 429 || createPayload.code === "UPLOAD_LIMIT_REACHED") {
-      setShowUpgradeModal(true);
-      return;
+      return "limit";
     }
 
     if (!createResponse.ok) {
-      throw new Error(createPayload.error || "Could not create evaluation job");
+      throw new Error(createPayload.error || `Could not create evaluation for ${file.name}`);
     }
 
     const transcriptPath =
@@ -109,40 +127,32 @@ export default function UploadTranscript({
     const supabase = createClient();
     const { error: uploadError } = await supabase.storage
       .from("transcripts")
-      .upload(transcriptPath, file, {
-        contentType,
-        upsert: false,
-      });
+      .upload(transcriptPath, file, { contentType, upsert: false });
 
     if (uploadError) {
-      throw new Error(uploadError.message);
+      throw new Error(`${file.name}: ${uploadError.message}`);
     }
 
-    setSuccess("Transcript uploaded. The worker will analyze it shortly.");
-    setFile(null);
-    setTitle("");
-    setUserReportedModel("");
-    onUploaded();
+    return "ok";
   }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!file) {
-      setError("Choose a transcript file first.");
+    if (files.length === 0) {
+      setError("Choose at least one transcript file.");
       return;
     }
 
-    const contentType = detectContentType(file);
-    if (!contentType) {
-      setError("Only .txt and .md transcript files are supported.");
+    const validationErrors = files
+      .map((selectedFile) => validateFile(selectedFile))
+      .filter((message): message is string => message !== null);
+    if (validationErrors.length > 0) {
+      setError(validationErrors.join(" "));
       return;
     }
 
-    const extensionOk = ALLOWED_EXTENSIONS.some((ext) =>
-      file.name.toLowerCase().endsWith(ext),
-    );
-    if (!extensionOk) {
-      setError("Only .txt and .md transcript files are supported.");
+    if (plan === "free" && uploadsUsed + files.length > FREE_UPLOAD_LIMIT) {
+      setShowUpgradeModal(true);
       return;
     }
 
@@ -155,10 +165,64 @@ export default function UploadTranscript({
     setError(null);
     setSuccess(null);
 
+    let uploadedCount = 0;
+    const failures: string[] = [];
+    const remainingFiles: File[] = [];
+    let hitLimit = false;
+
     try {
-      await uploadFile(contentType);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      for (const selectedFile of files) {
+        try {
+          const result = await uploadSingleFile(selectedFile);
+          if (result === "limit") {
+            hitLimit = true;
+            remainingFiles.push(
+              selectedFile,
+              ...files.slice(files.indexOf(selectedFile) + 1),
+            );
+            break;
+          }
+          uploadedCount += 1;
+        } catch (err) {
+          failures.push(
+            err instanceof Error ? err.message : `Upload failed for ${selectedFile.name}`,
+          );
+          remainingFiles.push(selectedFile);
+        }
+      }
+
+      if (uploadedCount > 0) {
+        onUploaded();
+      }
+
+      if (hitLimit) {
+        setShowUpgradeModal(true);
+      }
+
+      if (uploadedCount > 0 && failures.length === 0 && !hitLimit) {
+        setSuccess(
+          uploadedCount === 1
+            ? "Transcript uploaded. The worker will analyze it shortly."
+            : `${uploadedCount} transcripts uploaded. The worker will analyze them shortly.`,
+        );
+        setFiles([]);
+        if (inputRef.current) {
+          inputRef.current.value = "";
+        }
+      } else if (uploadedCount > 0) {
+        setSuccess(
+          `${uploadedCount} of ${files.length} transcripts uploaded. The worker will analyze them shortly.`,
+        );
+        setFiles(remainingFiles);
+      } else {
+        setFiles(remainingFiles);
+      }
+
+      if (failures.length > 0) {
+        setError(failures.join(" "));
+      } else if (hitLimit && uploadedCount === 0) {
+        setError("Free plan upload limit reached. Upgrade to Pro to continue.");
+      }
     } finally {
       setUploading(false);
     }
@@ -172,74 +236,63 @@ export default function UploadTranscript({
         uploadsUsed={uploadsUsed}
       />
 
-      <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-zinc-200 p-4">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <p className="text-sm leading-relaxed text-slate-600">
+          Upload a <code className="text-slate-800">.txt</code> or{" "}
+          <code className="text-slate-800">.md</code> file of your AI conversation.
+          EvalAI scores the transcript across 12 efficiency dimensions and generates a PDF
+          report.
+        </p>
+
         <div>
-          <label htmlFor="title" className="block text-sm font-medium text-zinc-700">
-            Title (optional)
-          </label>
           <input
-            id="title"
-            type="text"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm"
-            placeholder="Support chat — March 2026"
+            ref={inputRef}
+            id="transcript"
+            type="file"
+            multiple
+            accept=".txt,.md,.markdown,text/plain,text/markdown"
+            onChange={handleFileChange}
+            className="sr-only"
           />
-        </div>
-        <div>
-          <label htmlFor="model" className="block text-sm font-medium text-zinc-700">
-            AI model used (optional)
-          </label>
-          <select
-            id="model"
-            value={userReportedModel}
-            onChange={(event) => setUserReportedModel(event.target.value)}
-            disabled={modelsLoading}
-            className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+          <button
+            type="button"
+            onClick={handleChooseFile}
+            className={`w-full rounded-xl border-2 border-dashed px-6 py-10 text-center transition ${
+              atFreeLimit
+                ? "border-amber-200 bg-amber-50/50 hover:border-amber-300"
+                : "border-violet-200 bg-violet-50/40 hover:border-violet-300 hover:bg-violet-50"
+            }`}
           >
-            <option value="">
-              {modelsLoading ? "Loading models..." : "Auto-detect / not sure"}
-            </option>
-            {models.map((model) => (
-              <option key={model.model_id} value={model.model_id}>
-                {model.model_id} ({model.provider})
-              </option>
-            ))}
-          </select>
-          <p className="mt-2 text-xs text-zinc-500">
-            Improves cost comparison when your transcript does not name the model.
-          </p>
+            <CloudUploadIcon />
+            <p className="mt-3 text-sm font-medium text-slate-800">
+              {atFreeLimit
+                ? "Free plan limit reached — choose a plan to continue"
+                : "Click to choose a .txt or .md file"}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">Max 5MB</p>
+          </button>
+
+          {files.length > 0 && (
+            <ul className="mt-3 space-y-1 text-sm text-slate-600">
+              {files.map((selectedFile) => (
+                <li
+                  key={`${selectedFile.name}-${selectedFile.size}-${selectedFile.lastModified}`}
+                >
+                  {selectedFile.name}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-        <div>
-          <label htmlFor="transcript" className="block text-sm font-medium text-zinc-700">
-            Transcript file
-          </label>
-          <div className="mt-2 rounded-lg border-2 border-dashed border-zinc-300 bg-zinc-50 px-4 py-5 transition hover:border-zinc-400 hover:bg-zinc-100/80">
-            <input
-              id="transcript"
-              type="file"
-              accept=".txt,.md,.markdown,text/plain,text/markdown"
-              onChange={handleFileChange}
-              className="block w-full cursor-pointer text-sm text-zinc-700 file:mr-4 file:rounded-md file:border file:border-zinc-300 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-zinc-800 hover:file:bg-zinc-50"
-            />
-            {file ? (
-              <p className="mt-3 text-sm font-medium text-zinc-900">
-                Selected: {file.name}
-              </p>
-            ) : (
-              <p className="mt-3 text-sm text-zinc-500">
-                Choose a .txt or .md file to upload
-              </p>
-            )}
-          </div>
-          <p className="mt-2 text-xs text-zinc-500">
-            Plain text or markdown with lines like User: and Agent:
-          </p>
-        </div>
+
         {atFreeLimit && (
-          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            Free plan limit reached (5/month). Upgrade to Pro to upload more.
-          </p>
+          <button
+            type="button"
+            onClick={() => setShowUpgradeModal(true)}
+            className="w-full rounded-lg border border-violet-200 bg-violet-50 px-3 py-2.5 text-sm font-medium text-violet-800 transition hover:bg-violet-100"
+          >
+            View Free &amp; Pro plans
+          </button>
         )}
         {error && (
           <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -251,12 +304,23 @@ export default function UploadTranscript({
             {success}
           </p>
         )}
+
         <button
           type="submit"
-          disabled={uploading || !file}
-          className="w-full rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={uploading || files.length === 0}
+          onClick={(event) => {
+            if (atFreeLimit) {
+              event.preventDefault();
+              setShowUpgradeModal(true);
+            }
+          }}
+          className="rounded-lg bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {uploading ? "Uploading..." : "Upload & analyze"}
+          {uploading
+            ? "Uploading..."
+            : atFreeLimit
+              ? "Upgrade to upload more"
+              : "Analyze Transcript"}
         </button>
       </form>
     </>

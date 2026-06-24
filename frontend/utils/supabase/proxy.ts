@@ -44,17 +44,7 @@ export async function updateSession(request: NextRequest) {
 
     if (!isAuthenticated && pathname.startsWith("/dashboard")) {
       const url = request.nextUrl.clone();
-      url.pathname = "/signin";
-      const redirectResponse = NextResponse.redirect(url);
-      supabaseResponse.cookies.getAll().forEach(({ name, value }) => {
-        redirectResponse.cookies.set(name, value);
-      });
-      return redirectResponse;
-    }
-
-    if (isAuthenticated && pathname === "/signin") {
-      const url = request.nextUrl.clone();
-      url.pathname = "/dashboard";
+      url.pathname = "/auth";
       const redirectResponse = NextResponse.redirect(url);
       supabaseResponse.cookies.getAll().forEach(({ name, value }) => {
         redirectResponse.cookies.set(name, value);

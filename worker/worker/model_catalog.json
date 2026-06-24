@@ -1,72 +1,26 @@
 [
-  {
-    "model_id": "gpt-4o-mini",
-    "provider": "OpenAI",
-    "context_window": 128000,
-    "input_price_per_1m": 0.15,
-    "encoding": "o200k_base"
-  },
-  {
-    "model_id": "gpt-4o",
-    "provider": "OpenAI",
-    "context_window": 128000,
-    "input_price_per_1m": 2.5,
-    "encoding": "o200k_base"
-  },
-  {
-    "model_id": "gpt-4.1-mini",
-    "provider": "OpenAI",
-    "context_window": 1047576,
-    "input_price_per_1m": 0.4,
-    "encoding": "o200k_base"
-  },
-  {
-    "model_id": "gpt-4.1",
-    "provider": "OpenAI",
-    "context_window": 1047576,
-    "input_price_per_1m": 2.0,
-    "encoding": "o200k_base"
-  },
-  {
-    "model_id": "claude-3-5-haiku",
-    "provider": "Anthropic",
-    "context_window": 200000,
-    "input_price_per_1m": 0.8,
-    "encoding": "cl100k_base"
-  },
-  {
-    "model_id": "claude-sonnet-4",
-    "provider": "Anthropic",
-    "context_window": 200000,
-    "input_price_per_1m": 3.0,
-    "encoding": "cl100k_base"
-  },
-  {
-    "model_id": "gemini-2.0-flash",
-    "provider": "Google",
-    "context_window": 1048576,
-    "input_price_per_1m": 0.1,
-    "encoding": "cl100k_base"
-  },
-  {
-    "model_id": "gemini-1.5-pro",
-    "provider": "Google",
-    "context_window": 2097152,
-    "input_price_per_1m": 1.25,
-    "encoding": "cl100k_base"
-  },
-  {
-    "model_id": "mistral-small",
-    "provider": "Mistral",
-    "context_window": 128000,
-    "input_price_per_1m": 0.2,
-    "encoding": "cl100k_base"
-  },
-  {
-    "model_id": "deepseek-chat",
-    "provider": "DeepSeek",
-    "context_window": 128000,
-    "input_price_per_1m": 0.14,
-    "encoding": "cl100k_base"
-  }
+  {"model_id": "gpt-4o-mini", "provider": "OpenAI", "context_window": 128000, "input_price_per_1m": 0.15, "encoding": "o200k_base"},
+  {"model_id": "gpt-4o", "provider": "OpenAI", "context_window": 128000, "input_price_per_1m": 2.5, "encoding": "o200k_base"},
+  {"model_id": "gpt-4.1-nano", "provider": "OpenAI", "context_window": 1047576, "input_price_per_1m": 0.1, "encoding": "o200k_base"},
+  {"model_id": "gpt-4.1-mini", "provider": "OpenAI", "context_window": 1047576, "input_price_per_1m": 0.4, "encoding": "o200k_base"},
+  {"model_id": "gpt-4.1", "provider": "OpenAI", "context_window": 1047576, "input_price_per_1m": 2.0, "encoding": "o200k_base"},
+  {"model_id": "o3-mini", "provider": "OpenAI", "context_window": 200000, "input_price_per_1m": 1.1, "encoding": "o200k_base"},
+  {"model_id": "o1", "provider": "OpenAI", "context_window": 200000, "input_price_per_1m": 15.0, "encoding": "o200k_base"},
+  {"model_id": "claude-3-5-haiku", "provider": "Anthropic", "context_window": 200000, "input_price_per_1m": 0.8, "encoding": "cl100k_base"},
+  {"model_id": "claude-sonnet-4", "provider": "Anthropic", "context_window": 200000, "input_price_per_1m": 3.0, "encoding": "cl100k_base"},
+  {"model_id": "claude-opus-4", "provider": "Anthropic", "context_window": 200000, "input_price_per_1m": 15.0, "encoding": "cl100k_base"},
+  {"model_id": "gemini-2.0-flash", "provider": "Google", "context_window": 1048576, "input_price_per_1m": 0.1, "encoding": "cl100k_base"},
+  {"model_id": "gemini-2.5-flash", "provider": "Google", "context_window": 1048576, "input_price_per_1m": 0.15, "encoding": "cl100k_base"},
+  {"model_id": "gemini-1.5-pro", "provider": "Google", "context_window": 2097152, "input_price_per_1m": 1.25, "encoding": "cl100k_base"},
+  {"model_id": "gemini-2.5-pro", "provider": "Google", "context_window": 2097152, "input_price_per_1m": 1.25, "encoding": "cl100k_base"},
+  {"model_id": "mistral-small", "provider": "Mistral", "context_window": 128000, "input_price_per_1m": 0.2, "encoding": "cl100k_base"},
+  {"model_id": "mistral-large", "provider": "Mistral", "context_window": 128000, "input_price_per_1m": 2.0, "encoding": "cl100k_base"},
+  {"model_id": "deepseek-chat", "provider": "DeepSeek", "context_window": 128000, "input_price_per_1m": 0.14, "encoding": "cl100k_base"},
+  {"model_id": "deepseek-reasoner", "provider": "DeepSeek", "context_window": 128000, "input_price_per_1m": 0.55, "encoding": "cl100k_base"},
+  {"model_id": "llama-3.3-70b", "provider": "Meta", "context_window": 128000, "input_price_per_1m": 0.59, "encoding": "cl100k_base"},
+  {"model_id": "llama-4-scout", "provider": "Meta", "context_window": 10485760, "input_price_per_1m": 0.18, "encoding": "cl100k_base"},
+  {"model_id": "grok-2", "provider": "xAI", "context_window": 131072, "input_price_per_1m": 2.0, "encoding": "cl100k_base"},
+  {"model_id": "grok-3-mini", "provider": "xAI", "context_window": 131072, "input_price_per_1m": 0.3, "encoding": "cl100k_base"},
+  {"model_id": "command-r-plus", "provider": "Cohere", "context_window": 128000, "input_price_per_1m": 2.5, "encoding": "cl100k_base"},
+  {"model_id": "command-r", "provider": "Cohere", "context_window": 128000, "input_price_per_1m": 0.15, "encoding": "cl100k_base"}
 ]

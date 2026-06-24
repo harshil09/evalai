@@ -1,4 +1,4 @@
-# TranscriptIQ (EvalAI)
+# EvalAI
 
 Upload chat transcripts between a **user** and an **agent**, get deterministic **token analysis** (no LLM), and download a **PDF report** with statistics and charts.
 
@@ -20,7 +20,9 @@ Built with **Next.js**, **Supabase**, and a **Python background worker**.
    - **Free:** 5 uploads per calendar month
    - **Pro:** Unlimited uploads (dummy checkout flow for demo)
 
-Analysis is **rule-based** using [tiktoken](https://github.com/openai/tiktoken) — no LLM calls at report time.
+Analysis is **rule-based** using [tiktoken](https://github.com/openai/tiktoken). Optional **LLM coaching** (`ENABLE_LLM_COACH=true` on the worker) enriches flagged turns only — it never blocks job completion.
+
+Set `OPENROUTER_API_KEY` in `worker/.env` when enabling the hybrid LLM coach stage (uses [OpenRouter](https://openrouter.ai/) with OpenAI-compatible models).
 
 ---
 
@@ -263,10 +265,15 @@ See `worker/README.md` for worker-specific details.
 |--------|----------------|
 | `main.py` | Infinite poll loop, thread pool, stale-job recovery |
 | `processor.py` | Download transcript, orchestrate pipeline, upload PDF |
-| `parser.py` | Split `User:` / `Agent:` (and variants) into turns |
-| `analytics.py` | Token counts, per-turn stats, model catalog ranking |
-| `charts.py` | Bar chart (tokens/turn), pie chart (role share) |
-| `pdf_report.py` | Assemble PDF with tables and embedded charts |
+| `parser.py` | Split transcripts into user/agent turns |
+| `analytics.py` | Token counts, model ranking, cost analysis orchestration |
+| `user_evaluation.py` | Twelve-skill heuristic scoring (incl. redundancy detection) |
+| `prompting_coach.py` | Hybrid coach: rules → similarity → optional LLM enrichment |
+| `similarity.py` | All-pairs lexical/semantic redundancy detection |
+| `openrouter_client.py` | OpenRouter API client for optional LLM/embeddings |
+| `llm_coach.py` | Optional structured turn coaching via OpenRouter (feature-flagged) |
+| `charts.py` | Bar, pie, and Nightingale (rose) charts |
+| `pdf_report.py` | **AI Tool usage analyzer** PDF with readable tables and charts |
 
 ---
 

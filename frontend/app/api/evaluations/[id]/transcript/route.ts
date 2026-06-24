@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createClient } from "@/utils/supabase/server";
+import { createClient, getAuthUserId } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 
 type RouteContext = {
@@ -9,20 +9,18 @@ type RouteContext = {
 
 export async function GET(_request: Request, context: RouteContext) {
   const { id } = await context.params;
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const userId = await getAuthUserId();
 
-  if (!user) {
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const supabase = await createClient();
   const { data: evaluation, error } = await supabase
     .from("evaluations")
     .select("id, transcript_path, user_id, original_filename")
     .eq("id", id)
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .single();
 
   if (error || !evaluation) {

@@ -7,6 +7,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import (
     Image,
+    KeepTogether,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -14,8 +15,249 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from worker.charts import role_share_chart, tokens_by_turn_chart, user_evaluation_bar_chart
+from worker.charts import (
+    nightingale_chart,
+    role_share_chart,
+    tokens_by_turn_chart,
+)
 from worker.cost_analysis import format_usd
+from worker.version import REPORT_TITLE
+
+
+def _escape_pdf_text(text: str) -> str:
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _cell_para(text: str, style: ParagraphStyle) -> Paragraph:
+    return Paragraph(_escape_pdf_text(str(text or "")), style)
+
+
+def _table_style(header: bool = True) -> TableStyle:
+    commands = [
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    if header:
+        commands.extend(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f4f4f5")),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 8),
+            ]
+        )
+    commands.append(("FONTSIZE", (0, 1), (-1, -1), 7.5))
+    return TableStyle(commands)
+
+
+def _para_table(
+    rows: list[list],
+    col_widths: list,
+    cell_style: ParagraphStyle,
+    *,
+    header: bool = True,
+) -> Table:
+    table_rows: list[list] = []
+    for row_idx, row in enumerate(rows):
+        if row_idx == 0 and header:
+            table_rows.append([str(cell) for cell in row])
+        else:
+            table_rows.append([_cell_para(cell, cell_style) for cell in row])
+    table = Table(table_rows, colWidths=col_widths, repeatRows=1)
+    table.setStyle(_table_style(header=header))
+    return table
+
+
+def _coaching_payload(summary: dict) -> dict:
+    coaching = summary.get("prompting_recommendations")
+    if coaching:
+        return coaching
+    return {}
+
+
+def _format_model_cell(
+    model_id: str | None,
+    cost_label: str | None,
+    source: str | None = None,
+) -> str:
+    if not model_id:
+        return "—"
+    parts = [model_id]
+    if cost_label:
+        parts.append(f"est. {cost_label}")
+    if source:
+        parts.append(f"({source})")
+    return " — ".join(parts)
+
+
+def _append_prompting_recommendations(story: list, summary: dict, body_style, heading_style) -> None:
+    coaching = _coaching_payload(summary)
+    if not coaching:
+        return
+
+    cell_style = ParagraphStyle(
+        "TableCell",
+        parent=body_style,
+        fontSize=7.5,
+        leading=9,
+    )
+    subheading_style = ParagraphStyle(
+        "PromptingSubheading",
+        parent=heading_style,
+        fontSize=12,
+        spaceBefore=10,
+        spaceAfter=6,
+    )
+
+    story.append(Paragraph("Prompting recommendations", heading_style))
+    if coaching.get("summary"):
+        story.append(Paragraph(_escape_pdf_text(coaching["summary"]), body_style))
+
+    focus = coaching.get("focus_dimension")
+    focus_score = coaching.get("focus_dimension_score")
+    if focus is not None and focus_score is not None:
+        story.append(
+            Paragraph(
+                f"<b>Priority skill area:</b> {focus} ({focus_score}%)",
+                body_style,
+            )
+        )
+
+    efficiency = coaching.get("prompt_efficiency") or {}
+    if efficiency:
+        story.append(Paragraph("Prompt efficiency", subheading_style))
+        eff_rows = [
+            ["Metric", "Value"],
+            ["Efficiency score", f"{efficiency.get('efficiency_score', 0)}%"],
+            ["Grade", efficiency.get("grade", "—")],
+            ["Prompting quality", f"{efficiency.get('prompting_quality_score', 0)}%"],
+            [
+                "Expected tokens (complexity)",
+                str(efficiency.get("expected_tokens_for_complexity", "—")),
+            ],
+            [
+                "Excess tokens vs expected",
+                str(efficiency.get("excess_tokens_vs_expected", 0)),
+            ],
+        ]
+        eff_table = _para_table(eff_rows, [2.5 * inch, 3.5 * inch], cell_style)
+        story.append(KeepTogether([eff_table]))
+        if efficiency.get("verdict"):
+            story.append(Spacer(1, 0.06 * inch))
+            story.append(Paragraph(_escape_pdf_text(efficiency["verdict"]), body_style))
+
+    task_type = coaching.get("task_type") or {}
+    if task_type.get("label"):
+        story.append(
+            Paragraph(
+                f"<b>Task type:</b> {task_type['label']} "
+                f"({task_type.get('confidence', 0)}% confidence)",
+                body_style,
+            )
+        )
+        if task_type.get("rationale"):
+            story.append(
+                Paragraph(_escape_pdf_text(task_type["rationale"]), body_style)
+            )
+
+    clusters = coaching.get("redundancy_clusters") or []
+    techniques = coaching.get("prompting_techniques") or []
+    if clusters or techniques:
+        story.append(Paragraph("Coaching insights", subheading_style))
+        if clusters:
+            cluster_rows = [["Cluster", "Turns", "Size"]]
+            for cluster in clusters:
+                cluster_rows.append(
+                    [
+                        str(cluster.get("cluster_id", "")),
+                        ", ".join(str(t) for t in cluster.get("turn_indices", [])),
+                        str(cluster.get("size", 0)),
+                    ]
+                )
+            story.append(
+                KeepTogether(
+                    [
+                        Paragraph("<b>Redundant prompt clusters</b>", body_style),
+                        _para_table(
+                            cluster_rows,
+                            [0.8 * inch, 3.5 * inch, 0.7 * inch],
+                            cell_style,
+                        ),
+                    ]
+                )
+            )
+            story.append(Spacer(1, 0.08 * inch))
+        if techniques:
+            story.append(Paragraph("<b>Prompting techniques to try</b>", body_style))
+            for tech in techniques:
+                story.append(Paragraph(f"• {_escape_pdf_text(tech)}", body_style))
+
+    model_advice = coaching.get("model_advice") or {}
+    story.append(Paragraph("Task-aware model advice", subheading_style))
+    if model_advice.get("rationale"):
+        story.append(
+            Paragraph(_escape_pdf_text(model_advice["rationale"]), body_style)
+        )
+    story.append(Spacer(1, 0.06 * inch))
+
+    tier_label = model_advice.get("task_tier_label") or model_advice.get("task_tier", "—")
+    tier_score = model_advice.get("task_complexity_score", 0)
+    advice_rows = [
+        ["Field", "Recommendation"],
+        ["Task complexity", f"{tier_label} ({tier_score}%)"],
+        [
+            "Recommended model for this task tier",
+            _format_model_cell(
+                model_advice.get("tier_recommended_model"),
+                model_advice.get("tier_recommended_cost_label"),
+            ),
+        ],
+        [
+            "Reference model",
+            _format_model_cell(
+                model_advice.get("reference_model"),
+                model_advice.get("reference_cost_label"),
+                model_advice.get("reference_source"),
+            ),
+        ],
+        [
+            "Cheapest context fit",
+            _format_model_cell(
+                model_advice.get("cost_fit_recommended_model"),
+                model_advice.get("cost_fit_cost_label"),
+            ),
+        ],
+    ]
+    if model_advice.get("tier_vs_reference_savings_percent") is not None:
+        advice_rows.append(
+            [
+                "Task-tier savings vs reference",
+                (
+                    f"{model_advice['tier_vs_reference_savings_percent']}% "
+                    f"({model_advice.get('tier_vs_reference_savings_label', '—')})"
+                ),
+            ]
+        )
+
+    story.append(
+        KeepTogether(
+            [_para_table(advice_rows, [2.2 * inch, 3.8 * inch], cell_style)]
+        )
+    )
+    if model_advice.get("note"):
+        story.append(Spacer(1, 0.06 * inch))
+        story.append(
+            Paragraph(f"<i>{_escape_pdf_text(model_advice['note'])}</i>", body_style)
+        )
+
+    story.append(Spacer(1, 0.25 * inch))
 
 
 def build_pdf_report(
@@ -39,14 +281,21 @@ def build_pdf_report(
         parent=styles["Heading1"],
         fontSize=20,
         spaceAfter=12,
+        textColor=colors.HexColor("#1f2937"),
     )
     heading_style = styles["Heading2"]
     body_style = styles["BodyText"]
+    cell_style = ParagraphStyle(
+        "BodyCell",
+        parent=body_style,
+        fontSize=7.5,
+        leading=9,
+    )
 
     story: list = []
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    story.append(Paragraph("Transcript Token Analysis Report", title_style))
+    story.append(Paragraph(REPORT_TITLE, title_style))
     story.append(Paragraph(f"<b>File:</b> {filename or title or 'Untitled'}", body_style))
     story.append(Paragraph(f"<b>Generated:</b> {generated_at}", body_style))
     story.append(Spacer(1, 0.25 * inch))
@@ -63,23 +312,18 @@ def build_pdf_report(
         ["Encoding", summary.get("encoding_used", "cl100k_base")],
         ["Best fit model", summary.get("best_fit_model") or "None (exceeds all windows)"],
     ]
-    summary_table = Table(summary_rows, colWidths=[2.5 * inch, 3.5 * inch])
-    summary_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f4f4f5")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ]
+    story.append(
+        KeepTogether(
+            [_para_table(summary_rows, [2.5 * inch, 3.5 * inch], cell_style)]
         )
     )
-    story.append(summary_table)
     story.append(Spacer(1, 0.3 * inch))
+
+    _append_prompting_recommendations(story, summary, body_style, heading_style)
 
     user_eval = summary.get("user_evaluation") or {}
     if user_eval:
-        story.append(Paragraph("AI tool usage evaluation", heading_style))
+        story.append(Paragraph("How effectively the user uses AI tools", heading_style))
         overall = user_eval.get("overall_score", 0)
         grade = user_eval.get("grade", "—")
         story.append(
@@ -93,32 +337,34 @@ def build_pdf_report(
             story.append(Paragraph(user_eval["written_summary"], body_style))
         story.append(Spacer(1, 0.1 * inch))
 
-        eval_chart = user_evaluation_bar_chart(user_eval.get("dimensions", []))
-        chart_height = min(7.2, max(4.5, len(user_eval.get("dimensions", [])) * 0.38))
-        story.append(Image(io.BytesIO(eval_chart), width=6.5 * inch, height=chart_height * inch))
-        story.append(Spacer(1, 0.15 * inch))
-
-        dimension_rows = [["Skill", "Score", "Assessment"]]
-        for dim in user_eval.get("dimensions", []):
-            dimension_rows.append(
-                [dim["label"], f"{dim['score']}%", dim.get("detail", "")]
-            )
-        dimension_table = Table(
-            dimension_rows,
-            colWidths=[1.75 * inch, 0.65 * inch, 3.7 * inch],
+        dimensions = user_eval.get("dimensions", [])
+        nightingale = nightingale_chart(dimensions, title="Skill scores (Nightingale)")
+        story.append(
+            Image(io.BytesIO(nightingale), width=4.2 * inch, height=4.2 * inch)
         )
-        dimension_table.setStyle(
-            TableStyle(
+        story.append(Spacer(1, 0.12 * inch))
+
+        dimension_rows = [["Skill", "Score", "Description", "Assessment"]]
+        for dim in dimensions:
+            dimension_rows.append(
                 [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f4f4f5")),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 7.5),
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    dim["label"],
+                    f"{dim['score']}%",
+                    dim.get("description", ""),
+                    dim.get("detail", ""),
+                ]
+            )
+        story.append(
+            KeepTogether(
+                [
+                    _para_table(
+                        dimension_rows,
+                        [1.35 * inch, 0.55 * inch, 1.85 * inch, 2.0 * inch],
+                        cell_style,
+                    )
                 ]
             )
         )
-        story.append(dimension_table)
 
         cost_cmp = user_eval.get("cost_comparison") or summary.get("cost_analysis") or {}
         if cost_cmp and cost_cmp.get("reference_model"):
@@ -132,20 +378,6 @@ def build_pdf_report(
                     body_style,
                 )
             )
-            if cost_cmp.get("user_reported_model"):
-                story.append(
-                    Paragraph(
-                        f"Model reported at upload: <b>{cost_cmp['user_reported_model']}</b>",
-                        body_style,
-                    )
-                )
-            if cost_cmp.get("detected_model"):
-                story.append(
-                    Paragraph(
-                        f"Model mentioned in chat: <b>{cost_cmp['detected_model']}</b>",
-                        body_style,
-                    )
-                )
             story.append(Spacer(1, 0.08 * inch))
 
             summary_cost_rows = [
@@ -158,16 +390,18 @@ def build_pdf_report(
                     f"{cost_cmp.get('savings_percent', 0)}% ({cost_cmp.get('savings_label', '$0')})",
                 ],
             ]
-            summary_cost_table = Table(summary_cost_rows, colWidths=[2.2 * inch, 3.8 * inch])
-            summary_cost_table.setStyle(
-                TableStyle(
+            story.append(
+                KeepTogether(
                     [
-                        ("GRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
-                        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#fafafa")),
+                        _para_table(
+                            summary_cost_rows,
+                            [2.2 * inch, 3.8 * inch],
+                            cell_style,
+                            header=False,
+                        )
                     ]
                 )
             )
-            story.append(summary_cost_table)
             story.append(Spacer(1, 0.12 * inch))
 
             story.append(Paragraph("All models — cost for this transcript", heading_style))
@@ -197,39 +431,21 @@ def build_pdf_report(
                         f"{row['savings_vs_reference_percent']}%",
                     ]
                 )
-            market_table = Table(
-                market_rows,
-                colWidths=[1.35 * inch, 0.85 * inch, 0.45 * inch, 0.55 * inch, 0.95 * inch, 0.75 * inch],
-            )
-            market_table.setStyle(
-                TableStyle(
+            story.append(
+                KeepTogether(
                     [
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f4f4f5")),
-                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                        ("FONTSIZE", (0, 0), (-1, -1), 7),
-                        ("GRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
+                        _para_table(
+                            market_rows,
+                            [1.2 * inch, 0.75 * inch, 0.4 * inch, 0.5 * inch, 0.85 * inch, 0.7 * inch],
+                            cell_style,
+                        )
                     ]
                 )
             )
-            story.append(market_table)
             if cost_cmp.get("note"):
                 story.append(Spacer(1, 0.08 * inch))
                 story.append(Paragraph(f"<i>{cost_cmp['note']}</i>", body_style))
 
-        insights = user_eval.get("insights") or []
-        if insights:
-            story.append(Spacer(1, 0.12 * inch))
-            story.append(Paragraph("Recommendations", heading_style))
-            for insight in insights:
-                story.append(Paragraph(f"• {insight}", body_style))
-
-        story.append(Spacer(1, 0.1 * inch))
-        story.append(
-            Paragraph(
-                f"<i>{user_eval.get('methodology', '')}</i>",
-                body_style,
-            )
-        )
         story.append(Spacer(1, 0.25 * inch))
 
     turn_chart = tokens_by_turn_chart(summary.get("tokens_by_turn", []))
@@ -248,13 +464,15 @@ def build_pdf_report(
         Paragraph(
             "Based on total input tokens with "
             f"{summary.get('reserved_output_tokens', 4096)} tokens reserved for response. "
-            "This is a context-window fit check, not a quality evaluation.",
+            "The comparison column explains cost and capability vs the transcript reference model.",
             body_style,
         )
     )
     story.append(Spacer(1, 0.1 * inch))
 
-    model_rows = [["Model", "Provider", "Fits", "Tokens", "Input cost", "Est. (USD)"]]
+    model_rows = [
+        ["Model", "Provider", "Fits", "Tokens", "Input cost", "vs reference model"]
+    ]
     for model in summary.get("model_recommendations", []):
         cost = float(model.get("est_input_cost_usd", 0))
         model_rows.append(
@@ -264,31 +482,20 @@ def build_pdf_report(
                 "Yes" if model["fits"] else "No",
                 str(model["total_tokens"]),
                 format_usd(cost),
-                f"{cost:.8f}",
+                model.get("comparison_note", "—"),
             ]
         )
-    model_table = Table(
-        model_rows,
-        colWidths=[1.2 * inch, 0.9 * inch, 0.5 * inch, 0.65 * inch, 0.95 * inch, 1.0 * inch],
-    )
-    model_table.setStyle(
-        TableStyle(
+    story.append(
+        KeepTogether(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f4f4f5")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 8),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
+                _para_table(
+                    model_rows,
+                    [1.0 * inch, 0.7 * inch, 0.4 * inch, 0.55 * inch, 0.75 * inch, 2.35 * inch],
+                    cell_style,
+                )
             ]
         )
     )
-    story.append(model_table)
-
-    warnings = summary.get("parse_warnings") or []
-    if warnings:
-        story.append(Spacer(1, 0.25 * inch))
-        story.append(Paragraph("Parse notes", heading_style))
-        for warning in warnings:
-            story.append(Paragraph(f"• {warning}", body_style))
 
     doc.build(story)
     buffer.seek(0)

@@ -1,6 +1,6 @@
 "use client";
 
-type DashboardTab = "upload" | "history";
+type DashboardTab = "upload" | "history" | "backup";
 
 type DashboardTabsProps = {
   activeTab: DashboardTab;
@@ -8,28 +8,29 @@ type DashboardTabsProps = {
 };
 
 const TABS: { id: DashboardTab; label: string }[] = [
-  { id: "upload", label: "Upload" },
+  { id: "upload", label: "Upload Transcript" },
   { id: "history", label: "History" },
+  { id: "backup", label: "Backup" },
 ];
 
 export default function DashboardTabs({ activeTab, onChange }: DashboardTabsProps) {
   return (
-    <div className="flex gap-1 rounded-xl border border-zinc-200 bg-zinc-100 p-1">
+    <nav className="flex gap-6 border-b border-slate-200">
       {TABS.map((tab) => (
         <button
           key={tab.id}
           type="button"
           onClick={() => onChange(tab.id)}
-          className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition ${
+          className={`-mb-px border-b-2 pb-3 text-sm font-medium transition ${
             activeTab === tab.id
-              ? "bg-white text-zinc-900 shadow-sm"
-              : "text-zinc-600 hover:text-zinc-900"
+              ? "border-violet-600 text-violet-600"
+              : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700"
           }`}
         >
           {tab.label}
         </button>
       ))}
-    </div>
+    </nav>
   );
 }
 

@@ -1,4 +1,7 @@
 matplotlib==3.10.3
+numpy==2.2.6
+openai==1.82.0
+pydantic==2.11.5
 python-dotenv==1.1.0
 reportlab==4.4.2
 supabase==2.15.3

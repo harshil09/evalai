@@ -76,6 +76,22 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
   }, [loadEvaluations, refreshKey]);
 
   useEffect(() => {
+    const hasActiveJob = evaluations.some(
+      (evaluation) =>
+        evaluation.status === "pending" || evaluation.status === "processing",
+    );
+    if (!hasActiveJob) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void loadEvaluations();
+    }, 4000);
+
+    return () => window.clearInterval(interval);
+  }, [evaluations, loadEvaluations]);
+
+  useEffect(() => {
     const supabase = createClient();
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -130,9 +146,14 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
       const response = await fetch(`/api/evaluations/${evaluationId}/${type}`);
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
+        const message = (payload as { error?: string }).error;
         throw new Error(
-          (payload as { error?: string }).error ||
-            (type === "report" ? "Report is not ready yet." : "Transcript unavailable."),
+          message ||
+            (response.status === 401
+              ? "Session expired. Refresh the page and sign in again."
+              : type === "report"
+                ? "Report is not ready yet."
+                : "Transcript unavailable."),
         );
       }
 
@@ -161,9 +182,9 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
   if (evaluations.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-6 py-12 text-center">
-        <p className="font-medium text-zinc-900">No uploads yet</p>
+        <p className="font-medium text-zinc-900">No uploads in the last 7 days</p>
         <p className="mt-1 text-sm text-zinc-500">
-          Your transcript uploads and PDF reports will appear here.
+          Upload a transcript to see it here. Older evaluations are not shown in History.
         </p>
       </div>
     );
@@ -171,6 +192,14 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
 
   return (
     <div className="space-y-4">
+      {evaluations.some(
+        (evaluation) =>
+          evaluation.status === "pending" || evaluation.status === "processing",
+      ) && (
+        <p className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+          Analysis in progress — this page refreshes automatically every few seconds.
+        </p>
+      )}
       {error && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           {error}
@@ -188,6 +217,8 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Tokens</th>
                 <th className="px-4 py-3">AI score</th>
+                <th className="px-4 py-3">Efficiency</th>
+                <th className="px-4 py-3">Est. savings</th>
                 <th className="px-4 py-3 text-right">Downloads</th>
               </tr>
             </thead>
@@ -199,6 +230,29 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
           user_evaluation?: {
             overall_score?: number;
             grade?: string;
+          };
+          prompting_recommendations?: {
+            prompt_efficiency?: {
+              efficiency_score?: number;
+              grade?: string;
+            };
+            optimized_session?: {
+              savings_tokens?: number;
+              savings_percent?: number;
+            };
+            token_savings_estimate?: {
+              savings_tokens?: number;
+              savings_percent?: number;
+            };
+            task_type?: {
+              label?: string;
+            };
+            model_advice?: {
+              tier_recommended_model?: string;
+            };
+            tiered_model_picks?: {
+              picks?: Array<{ model_id: string; label: string }>;
+            };
           };
         } | null;
                 const displayName =
@@ -257,6 +311,71 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
                           <p className="text-xs text-zinc-500">
                             {summary.user_evaluation.grade}
                           </p>
+                        </div>
+                      ) : (
+                        <span className="text-zinc-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {evaluation.status === "completed" &&
+                      summary?.prompting_recommendations?.prompt_efficiency
+                        ?.efficiency_score != null ? (
+                        <div>
+                          <p className="font-medium text-zinc-900">
+                            {
+                              summary.prompting_recommendations.prompt_efficiency
+                                .efficiency_score
+                            }
+                            %
+                          </p>
+                          <p className="text-xs text-zinc-500">
+                            {summary.prompting_recommendations.prompt_efficiency.grade}
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="text-zinc-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {evaluation.status === "completed" &&
+                      ((summary?.prompting_recommendations?.optimized_session?.savings_tokens ??
+                        0) > 0 ||
+                        (summary?.prompting_recommendations?.token_savings_estimate
+                          ?.savings_tokens ?? 0) > 0) ? (
+                        <div>
+                          <p className="font-medium text-zinc-900">
+                            {(summary?.prompting_recommendations?.optimized_session
+                              ?.savings_percent ??
+                              summary?.prompting_recommendations?.token_savings_estimate
+                                ?.savings_percent ??
+                              0)}
+                            %
+                          </p>
+                          <p className="text-xs text-zinc-500">
+                            {(summary?.prompting_recommendations?.optimized_session
+                              ?.savings_tokens ??
+                              summary?.prompting_recommendations?.token_savings_estimate
+                                ?.savings_tokens ??
+                              0).toLocaleString()}{" "}
+                            tokens
+                          </p>
+                          {(summary?.prompting_recommendations?.tiered_model_picks?.picks?.[1]
+                            ?.model_id ||
+                            summary?.prompting_recommendations?.model_advice
+                              ?.tier_recommended_model) && (
+                            <p className="text-xs text-zinc-500">
+                              →{" "}
+                              {summary.prompting_recommendations.tiered_model_picks?.picks?.[1]
+                                ?.model_id ??
+                                summary.prompting_recommendations.model_advice
+                                  ?.tier_recommended_model}
+                            </p>
+                          )}
+                          {summary?.prompting_recommendations?.task_type?.label && (
+                            <p className="text-xs text-zinc-400">
+                              {summary.prompting_recommendations.task_type.label}
+                            </p>
+                          )}
                         </div>
                       ) : (
                         <span className="text-zinc-400">—</span>
