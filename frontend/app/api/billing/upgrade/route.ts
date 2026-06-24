@@ -7,7 +7,10 @@ export async function POST() {
   const userId = await getAuthUserId();
 
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Session expired. Please sign in again." },
+      { status: 401 },
+    );
   }
 
   const admin = createAdminClient();

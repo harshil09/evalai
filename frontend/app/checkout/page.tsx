@@ -13,10 +13,16 @@ export default function CheckoutPage() {
     setError(null);
 
     try {
-      const response = await fetch("/api/billing/upgrade", { method: "POST" });
+      const response = await fetch("/api/billing/upgrade", {
+        method: "POST",
+        credentials: "same-origin",
+      });
       const payload = await response.json();
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error("Session expired. Please sign in again and retry checkout.");
+        }
         throw new Error(payload.error || "Checkout failed");
       }
 

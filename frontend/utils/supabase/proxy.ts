@@ -36,14 +36,15 @@ export async function updateSession(request: NextRequest) {
       },
     });
 
-    // Do not run code between createServerClient and getUser().
+    // Read session from cookies only — avoids a network call to Supabase Auth on
+    // every request (getUser() can block ~10s and fail with ConnectTimeoutError).
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
 
     const { pathname } = request.nextUrl;
 
-    if (!user && pathname.startsWith("/dashboard")) {
+    if (!session?.user && pathname.startsWith("/dashboard")) {
       const url = request.nextUrl.clone();
       url.pathname = "/signin";
       const redirectResponse = NextResponse.redirect(url);

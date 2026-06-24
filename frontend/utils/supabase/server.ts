@@ -25,17 +25,33 @@ export const createClient = async () => {
   });
 };
 
-/** Validates session via Supabase Auth and returns the user id. */
+/**
+ * Resolve the signed-in user id from the session cookie (no network round-trip).
+ * Falls back through getClaims when the session cookie is not yet hydrated.
+ */
 export async function getAuthUserId(): Promise<string | null> {
   const supabase = await createClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
 
-  if (error || !user?.id) {
-    return null;
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.user?.id) {
+      return session.user.id;
+    }
+  } catch {
+    // continue to claims fallback
   }
 
-  return user.id;
+  try {
+    const { data, error } = await supabase.auth.getClaims();
+    const userId = data?.claims?.sub;
+    if (!error && typeof userId === "string" && userId) {
+      return userId;
+    }
+  } catch {
+    // Supabase Auth unreachable — session cookie path above is preferred
+  }
+
+  return null;
 }
