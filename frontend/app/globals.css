@@ -15,6 +15,9 @@
   --animate-auth-fade-in: auth-fade-in 0.3s ease-out both;
   --animate-auth-shake: auth-shake 0.4s ease-in-out;
   --animate-auth-pulse-soft: auth-pulse-soft 2.5s ease-in-out infinite;
+  --animate-auth-orb: auth-orb 8s ease-in-out infinite;
+  --animate-auth-orb-delayed: auth-orb 8s ease-in-out 4s infinite;
+  --animate-auth-toast-in: auth-toast-in 0.35s cubic-bezier(0.21, 1.02, 0.73, 1) both;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -75,6 +78,200 @@ body {
     opacity: 0.7;
     transform: scale(1.05);
   }
+}
+
+@keyframes auth-orb {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1) translate(0, 0);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.08) translate(12px, -8px);
+  }
+}
+
+@keyframes auth-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes auth-shimmer-sweep {
+  0% {
+    transform: translateX(-120%) skewX(-12deg);
+  }
+  100% {
+    transform: translateX(220%) skewX(-12deg);
+  }
+}
+
+@keyframes auth-btn-shimmer {
+  0% {
+    transform: translateX(-100%) skewX(-12deg);
+  }
+  100% {
+    transform: translateX(200%) skewX(-12deg);
+  }
+}
+
+.auth-glass-card {
+  isolation: isolate;
+}
+
+.auth-shimmer-sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(255, 255, 255, 0.06) 50%,
+    transparent 60%
+  );
+  animation: auth-shimmer-sweep 6s ease-in-out infinite;
+}
+
+.auth-gradient-btn {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #6d28d9 100%);
+}
+
+.auth-btn-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.18) 50%,
+    transparent 70%
+  );
+  animation: auth-btn-shimmer 3s ease-in-out infinite;
+}
+
+.group:hover .auth-btn-shimmer::after {
+  animation-duration: 1.8s;
+}
+
+.dashboard-glass-card {
+  isolation: isolate;
+}
+
+.dashboard-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(255, 255, 255, 0.04) 50%,
+    transparent 60%
+  );
+  animation: auth-shimmer-sweep 7s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.dashboard-kpi-tile {
+  animation: auth-fade-up 0.45s ease-out both;
+}
+
+.dashboard-kpi-tile:nth-child(1) {
+  animation-delay: 0.05s;
+}
+.dashboard-kpi-tile:nth-child(2) {
+  animation-delay: 0.1s;
+}
+.dashboard-kpi-tile:nth-child(3) {
+  animation-delay: 0.15s;
+}
+.dashboard-kpi-tile:nth-child(4) {
+  animation-delay: 0.2s;
+}
+
+/* EvalAI logo — theme-aligned motion */
+@keyframes logo-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes logo-ai-shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.logo-root-interactive {
+  transition: transform 0.25s ease;
+}
+
+.logo-root-interactive:hover {
+  transform: scale(1.03);
+}
+
+.logo-glow {
+  animation: logo-glow-pulse 3.5s ease-in-out infinite;
+}
+
+.logo-root-interactive:hover .logo-glow {
+  animation-duration: 2s;
+  opacity: 1;
+}
+
+.logo-ai-text-shimmer {
+  background-size: 200% auto;
+  animation: logo-ai-shimmer 4s linear infinite;
+}
+
+.logo-mark-interactive {
+  transition: transform 0.25s ease;
+}
+
+.logo-root-interactive:hover .logo-mark-interactive {
+  transform: rotate(-1deg) scale(1.04);
+}
+
+.logo-doc-group {
+  transition: opacity 0.3s ease;
+}
+
+.logo-root-interactive:hover .logo-doc-group {
+  opacity: 0.95;
+}
+
+.logo-ai-cluster {
+  transition: transform 0.3s ease;
+}
+
+.logo-root-interactive:hover .logo-ai-cluster {
+  transform: scale(1.06);
+}
+
+.logo-ai-core {
+  transition: filter 0.3s ease;
+}
+
+.logo-root-interactive:hover .logo-ai-core {
+  filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.65));
+}
+
+.logo-scan-beam {
+  mix-blend-mode: screen;
 }
 
 @media (prefers-reduced-motion: reduce) {

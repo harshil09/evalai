@@ -46,7 +46,7 @@ function CloudUploadIcon() {
       fill="none"
       stroke="currentColor"
       strokeWidth="1.5"
-      className="mx-auto h-10 w-10 text-violet-500"
+      className="mx-auto h-10 w-10 text-violet-400"
       aria-hidden="true"
     >
       <path d="M12 16V4m0 0 7 7m-7-7-7 7" strokeLinecap="round" strokeLinejoin="round" />
@@ -237,9 +237,9 @@ export default function UploadTranscript({
       />
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        <p className="text-sm leading-relaxed text-slate-600">
-          Upload a <code className="text-slate-800">.txt</code> or{" "}
-          <code className="text-slate-800">.md</code> file of your AI conversation.
+        <p className="text-sm leading-relaxed text-zinc-400">
+          Upload a <code className="text-violet-300">.txt</code> or{" "}
+          <code className="text-violet-300">.md</code> file of your AI conversation.
           EvalAI scores the transcript across 12 efficiency dimensions and generates a PDF
           report.
         </p>
@@ -259,21 +259,21 @@ export default function UploadTranscript({
             onClick={handleChooseFile}
             className={`w-full rounded-xl border-2 border-dashed px-6 py-10 text-center transition ${
               atFreeLimit
-                ? "border-amber-200 bg-amber-50/50 hover:border-amber-300"
-                : "border-violet-200 bg-violet-50/40 hover:border-violet-300 hover:bg-violet-50"
+                ? "border-amber-500/30 bg-amber-500/5 hover:border-amber-500/50"
+                : "border-violet-500/35 bg-violet-500/5 hover:border-violet-400/55 hover:bg-violet-500/10"
             }`}
           >
             <CloudUploadIcon />
-            <p className="mt-3 text-sm font-medium text-slate-800">
+            <p className="mt-3 text-sm font-medium text-white">
               {atFreeLimit
                 ? "Free plan limit reached — choose a plan to continue"
                 : "Click to choose a .txt or .md file"}
             </p>
-            <p className="mt-1 text-xs text-slate-500">Max 5MB</p>
+            <p className="mt-1 text-xs text-zinc-500">Max 5MB</p>
           </button>
 
           {files.length > 0 && (
-            <ul className="mt-3 space-y-1 text-sm text-slate-600">
+            <ul className="mt-3 space-y-1 text-sm text-zinc-400">
               {files.map((selectedFile) => (
                 <li
                   key={`${selectedFile.name}-${selectedFile.size}-${selectedFile.lastModified}`}
@@ -289,18 +289,18 @@ export default function UploadTranscript({
           <button
             type="button"
             onClick={() => setShowUpgradeModal(true)}
-            className="w-full rounded-lg border border-violet-200 bg-violet-50 px-3 py-2.5 text-sm font-medium text-violet-800 transition hover:bg-violet-100"
+            className="w-full rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2.5 text-sm font-medium text-violet-200 transition hover:bg-violet-500/15"
           >
             View Free &amp; Pro plans
           </button>
         )}
         {error && (
-          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
             {error}
           </p>
         )}
         {success && (
-          <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+          <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
             {success}
           </p>
         )}
@@ -314,7 +314,7 @@ export default function UploadTranscript({
               setShowUpgradeModal(true);
             }
           }}
-          className="rounded-lg bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="auth-gradient-btn rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
         >
           {uploading
             ? "Uploading..."

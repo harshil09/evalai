@@ -5,7 +5,7 @@ export default function DashboardPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center text-sm text-slate-600">
+        <div className="flex min-h-screen items-center justify-center bg-[#0a0a14] text-sm text-zinc-400">
           Loading...
         </div>
       }

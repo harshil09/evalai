@@ -1,18 +1,20 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { isValidEmail } from "@/components/auth/auth-utils";
 import AuthShell from "@/components/auth/AuthShell";
 import {
-  AuthError,
-  AuthField,
   AuthFooterLink,
+  AuthRememberForgot,
+  AuthField,
   AuthSubmitButton,
-  AuthSuccess,
   PasswordField,
 } from "@/components/auth/AuthForm";
+import { showAuthToast } from "@/components/auth/AuthToast";
+
+const REMEMBER_EMAIL_KEY = "evalai_remember_email";
 
 function getConfigError(): string | null {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
@@ -34,36 +36,80 @@ export default function SignInPage() {
 
   const [email, setEmail] = useState(emailFromSignup);
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(configError);
+  const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const canSubmit =
-    isValidEmail(email) && password.length > 0 && !configError;
+  const canSubmit = isValidEmail(email) && password.length > 0 && !configError;
+
+  useEffect(() => {
+    if (registered) {
+      showAuthToast("success", "Account created successfully. Please sign in to continue.");
+    }
+  }, [registered]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(REMEMBER_EMAIL_KEY);
+      if (saved && !emailFromSignup) {
+        setEmail(saved);
+        setRemember(true);
+      }
+    } catch {
+      // ignore
+    }
+  }, [emailFromSignup]);
+
+  async function handleForgotPassword() {
+    const target = email.trim() || window.prompt("Enter your email address")?.trim();
+    if (!target) return;
+    if (!isValidEmail(target)) {
+      showAuthToast("error", "Enter a valid email address first.");
+      return;
+    }
+    const { error } = await supabase.auth.resetPasswordForEmail(target, {
+      redirectTo: `${window.location.origin}/auth/callback`,
+    });
+    if (error) {
+      showAuthToast("error", error.message);
+      return;
+    }
+    showAuthToast("success", "Password reset link sent. Check your inbox.");
+  }
 
   async function handleSignIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError(null);
     if (configError) {
-      setError(configError);
+      showAuthToast("error", configError);
       return;
     }
     if (!canSubmit) {
-      setError("Please enter a valid email and password.");
+      showAuthToast("error", "Please enter a valid email and password.");
       return;
     }
     setLoading(true);
     try {
+      const trimmedEmail = email.trim();
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: trimmedEmail,
         password,
       });
       if (signInError) {
-        setError(signInError.message);
+        showAuthToast("error", signInError.message);
         return;
       }
+      try {
+        if (remember) {
+          localStorage.setItem(REMEMBER_EMAIL_KEY, trimmedEmail);
+        } else {
+          localStorage.removeItem(REMEMBER_EMAIL_KEY);
+        }
+      } catch {
+        // ignore
+      }
+      showAuthToast("success", "Signed in successfully. Redirecting…");
       window.location.assign("/dashboard");
     } catch {
-      setError("Something went wrong. Please try again.");
+      showAuthToast("error", "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -72,24 +118,20 @@ export default function SignInPage() {
   return (
     <AuthShell
       mode="signin"
-      title="Sign in to your account"
-      subtitle="Access your dashboard, upload history, and PDF reports."
+      title="Welcome back"
+      subtitle="Sign in to your EvalAI workspace."
       footer={
-        <AuthFooterLink prompt="Don't have an account?" href="/signup" linkText="Sign up" />
+        <AuthFooterLink prompt="No account?" href="/signup" linkText="Create one free" />
       }
     >
       <form onSubmit={handleSignIn} className="space-y-5">
-        {registered && (
-          <AuthSuccess message="Account created successfully. Please sign in to continue." />
-        )}
         <AuthField
           id="email"
-          label="Email"
+          label="Email address"
           type="email"
           value={email}
           onChange={setEmail}
           autoComplete="email"
-          placeholder="eg. john@example.com"
           validateEmail
         />
         <PasswordField
@@ -99,8 +141,17 @@ export default function SignInPage() {
           onChange={setPassword}
           autoComplete="current-password"
         />
-        <AuthError message={error} />
-        <AuthSubmitButton label="Sign in" loading={loading} disabled={!canSubmit} />
+        <AuthRememberForgot
+          remember={remember}
+          onRememberChange={setRemember}
+          onForgotPassword={handleForgotPassword}
+        />
+        <AuthSubmitButton
+          label="Sign in"
+          loadingLabel="Signing in…"
+          loading={loading}
+          disabled={!canSubmit}
+        />
       </form>
     </AuthShell>
   );

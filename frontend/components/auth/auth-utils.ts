@@ -14,11 +14,11 @@ export function getPasswordStrength(password: string): PasswordStrength {
 
 export const STRENGTH_LABELS = ["", "Weak", "Fair", "Good", "Strong"] as const;
 
-export const STRENGTH_COLORS = [
-  "bg-slate-200",
-  "bg-red-400",
-  "bg-amber-400",
-  "bg-violet-500",
+/** Per-segment colors: red → orange → indigo → green */
+export const STRENGTH_SEGMENT_COLORS = [
+  "bg-red-500",
+  "bg-orange-500",
+  "bg-indigo-500",
   "bg-emerald-500",
 ] as const;
 

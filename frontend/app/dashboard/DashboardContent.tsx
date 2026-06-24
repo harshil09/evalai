@@ -3,10 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
+import EvalAILogo from "@/components/auth/EvalAILogo";
+import AccountSummaryCard from "@/components/dashboard/AccountSummaryCard";
 import BackupData from "@/components/dashboard/BackupData";
 import DashboardTabs, { type DashboardTab } from "@/components/dashboard/DashboardTabs";
+import DashboardKpiCards from "@/components/dashboard/DashboardKpiCards";
+import DocumentSearch from "@/components/dashboard/DocumentSearch";
 import EvaluationHistory from "@/components/dashboard/EvaluationHistory";
 import UploadTranscript from "@/components/dashboard/UploadTranscript";
+import { GLASS_CARD, GLASS_CARD_INNER } from "@/components/dashboard/dashboard-utils";
 
 type Profile = {
   id: string;
@@ -26,6 +31,7 @@ export default function DashboardContent() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [historySearchQuery, setHistorySearchQuery] = useState("");
 
   const loadDashboard = useCallback(async () => {
     const supabase = createClient();
@@ -100,114 +106,114 @@ export default function DashboardContent() {
 
   if (loading) {
     return (
-      <div className="flex flex-1 items-center justify-center text-sm text-zinc-600">
-        Loading...
+      <div className="flex min-h-screen items-center justify-center bg-[#0a0a14] text-sm text-zinc-400">
+        Loading dashboard...
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-        <header className="flex flex-col gap-4">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-semibold text-violet-600">EvalAI</p>
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-white sm:ml-auto"
-            >
-              Sign out
-            </button>
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-8">
-            <h1 className="shrink-0 text-2xl font-bold text-slate-900">Dashboard</h1>
+    <div className="relative min-h-screen overflow-hidden bg-[#0a0a14] px-4 py-8 sm:py-10">
+      <div
+        className="pointer-events-none absolute -left-32 top-1/4 h-96 w-96 animate-auth-orb rounded-full bg-indigo-600/20 blur-[100px]"
+        aria-hidden="true"
+      />
+      <div
+        className="pointer-events-none absolute -right-32 bottom-1/4 h-96 w-96 animate-auth-orb-delayed rounded-full bg-violet-600/15 blur-[100px]"
+        aria-hidden="true"
+      />
+
+      <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6">
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <EvalAILogo size="sm" variant="dark" interactive />
+          <div className="flex flex-1 flex-col gap-3 sm:mx-6 sm:max-w-md">
             <DashboardTabs activeTab={activeTab} onChange={setActiveTab} />
           </div>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="inline-flex items-center justify-center gap-2 self-start rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white sm:self-center"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12H3m0 0 4-4m-4 4 4 4m10-4h2a2 2 0 012 2v6a2 2 0 01-2 2h-2" />
+            </svg>
+            Sign out
+          </button>
         </header>
 
         {error && (
-          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
             {error}
           </p>
         )}
 
         {successMessage && (
-          <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+          <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
             {successMessage}
           </p>
         )}
 
-        {profile && (
-          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-              Account
-            </h2>
-            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-              <div>
-                <dt className="text-zinc-500">Name</dt>
-                <dd className="font-medium text-zinc-900">
-                  {[profile.first_name, profile.last_name].filter(Boolean).join(" ") ||
-                    "—"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-zinc-500">Email</dt>
-                <dd className="font-medium text-zinc-900">{profile.email}</dd>
-              </div>
-              <div>
-                <dt className="text-zinc-500">Plan</dt>
-                <dd className="font-medium capitalize text-zinc-900">
-                  {profile.plan}
-                  {profile.plan === "pro" && (
-                    <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-                      Active
-                    </span>
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-zinc-500">Uploads this month</dt>
-                <dd className="font-medium text-zinc-900">
-                  {profile.plan === "free"
-                    ? `${usageCount ?? 0} / 5`
-                    : "Unlimited uploads"}
-                </dd>
-              </div>
-            </dl>
-          </section>
-        )}
+        {activeTab === "upload" && profile && (
+          <div className="flex flex-col gap-6 animate-auth-fade-up">
+            <AccountSummaryCard
+              firstName={profile.first_name}
+              lastName={profile.last_name}
+              email={profile.email}
+              plan={profile.plan}
+              uploadsUsed={usageCount ?? 0}
+            />
 
-        {activeTab === "upload" && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-900">Upload a Transcript</h2>
-            <div className="mt-4">
-              {profile && (
-                <UploadTranscript
-                  plan={profile.plan}
-                  uploadsUsed={usageCount ?? 0}
-                  onUploaded={handleUploaded}
-                />
-              )}
-            </div>
-          </section>
+            <DashboardKpiCards refreshKey={refreshKey} />
+
+            <section className={GLASS_CARD}>
+              <div className="dashboard-shimmer pointer-events-none absolute inset-0" aria-hidden="true" />
+              <div className={GLASS_CARD_INNER}>
+                <h2 className="text-lg font-semibold text-white">Upload a Transcript</h2>
+                <div className="mt-5">
+                  <UploadTranscript
+                    plan={profile.plan}
+                    uploadsUsed={usageCount ?? 0}
+                    onUploaded={handleUploaded}
+                  />
+                </div>
+              </div>
+            </section>
+          </div>
         )}
 
         {activeTab === "history" && (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-900">History</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Transcripts and PDF reports from the last 7 days.
-            </p>
-            <div className="mt-4">
-              <EvaluationHistory refreshKey={refreshKey} />
-            </div>
-          </section>
+          <div className="flex flex-col gap-6 animate-auth-fade-up">
+            <DocumentSearch
+              query={historySearchQuery}
+              onQueryChange={setHistorySearchQuery}
+            />
+
+            <section className={GLASS_CARD}>
+              <div className="dashboard-shimmer pointer-events-none absolute inset-0" aria-hidden="true" />
+              <div className={GLASS_CARD_INNER}>
+                <h2 className="text-lg font-semibold text-white">History</h2>
+                <p className="mt-1 text-sm text-zinc-400">
+                  {historySearchQuery.trim()
+                    ? "Matching transcripts and PDF reports across all uploads."
+                    : "Transcripts and PDF reports from the last 7 days."}
+                </p>
+                <div className="mt-5">
+                  <EvaluationHistory
+                    refreshKey={refreshKey}
+                    searchQuery={historySearchQuery}
+                  />
+                </div>
+              </div>
+            </section>
+          </div>
         )}
 
         {activeTab === "backup" && (
-          <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-            <BackupData />
+          <section className={`${GLASS_CARD} animate-auth-fade-up`}>
+            <div className="dashboard-shimmer pointer-events-none absolute inset-0" aria-hidden="true" />
+            <div className={GLASS_CARD_INNER}>
+              <BackupData />
+            </div>
           </section>
         )}
       </div>

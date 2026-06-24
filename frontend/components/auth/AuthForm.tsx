@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import {
-  STRENGTH_COLORS,
   STRENGTH_LABELS,
+  STRENGTH_SEGMENT_COLORS,
   getPasswordStrength,
   isValidEmail,
 } from "@/components/auth/auth-utils";
@@ -17,16 +17,30 @@ type AuthFieldProps = {
   onChange: (value: string) => void;
   autoComplete?: string;
   required?: boolean;
-  placeholder?: string;
   validateEmail?: boolean;
 };
 
-function CheckIcon() {
-  return (
-    <svg className="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-    </svg>
-  );
+const inputBase =
+  "peer w-full rounded-xl border bg-white/[0.04] px-4 pb-2.5 pt-5 text-sm text-white outline-none transition-all duration-200 placeholder-transparent";
+
+function fieldBorderClass(
+  focused: boolean,
+  showValid: boolean,
+  showInvalid: boolean,
+): string {
+  if (showInvalid) return "border-red-500/70 ring-1 ring-red-500/30";
+  if (showValid) return "border-emerald-500/70 ring-1 ring-emerald-500/30";
+  if (focused) return "border-indigo-400/60 ring-1 ring-indigo-400/25";
+  return "border-white/10 hover:border-white/20";
+}
+
+function floatingLabelClass(focused: boolean, hasValue: boolean): string {
+  const up = focused || hasValue;
+  return `pointer-events-none absolute left-4 transition-all duration-200 ${
+    up
+      ? "top-2 text-[10px] font-medium uppercase tracking-wide text-indigo-300"
+      : "top-1/2 -translate-y-1/2 text-sm text-zinc-500"
+  }`;
 }
 
 export function AuthField({
@@ -37,23 +51,16 @@ export function AuthField({
   onChange,
   autoComplete,
   required = true,
-  placeholder,
   validateEmail = false,
 }: AuthFieldProps) {
   const [focused, setFocused] = useState(false);
-  const showValid = validateEmail && value.length > 0 && isValidEmail(value);
-  const showInvalid = validateEmail && value.length > 0 && !isValidEmail(value) && !focused;
+  const [touched, setTouched] = useState(false);
+  const hasValue = value.length > 0;
+  const showValid = validateEmail && hasValue && isValidEmail(value);
+  const showInvalid = validateEmail && touched && hasValue && !isValidEmail(value);
 
   return (
-    <div className="group">
-      <label
-        htmlFor={id}
-        className={`mb-1.5 block text-sm font-medium transition-colors ${
-          focused ? "text-violet-700" : "text-slate-700"
-        }`}
-      >
-        {label}
-      </label>
+    <div>
       <div className="relative">
         <input
           id={id}
@@ -61,28 +68,21 @@ export function AuthField({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onBlur={() => {
+            setFocused(false);
+            setTouched(true);
+          }}
           autoComplete={autoComplete}
           required={required}
-          placeholder={placeholder}
-          className={`w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition-all duration-200 placeholder:text-slate-400 ${
-            showInvalid
-              ? "border-red-300 ring-2 ring-red-50"
-              : showValid
-                ? "border-emerald-300 ring-2 ring-emerald-50"
-                : focused
-                  ? "border-violet-500 ring-2 ring-violet-100"
-                  : "border-slate-300 hover:border-slate-400"
-          } ${validateEmail ? "pr-10" : ""}`}
+          placeholder=" "
+          className={`${inputBase} ${fieldBorderClass(focused, showValid, showInvalid)}`}
         />
-        {validateEmail && showValid && (
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 animate-auth-fade-in">
-            <CheckIcon />
-          </span>
-        )}
+        <label htmlFor={id} className={floatingLabelClass(focused, hasValue)}>
+          {label}
+        </label>
       </div>
       {showInvalid && (
-        <p className="mt-1.5 animate-auth-fade-in text-xs text-red-600">
+        <p className="mt-1.5 animate-auth-fade-in text-xs text-red-400">
           Enter a valid email address
         </p>
       )}
@@ -135,35 +135,34 @@ function PasswordStrengthMeter({ password }: { password: string }) {
   if (!password) return null;
 
   return (
-    <div className="mt-2 animate-auth-fade-in space-y-1.5">
-      <div className="flex gap-1">
+    <div className="mt-3 animate-auth-fade-in space-y-2">
+      <div className="flex gap-1.5">
         {[1, 2, 3, 4].map((level) => (
           <div
             key={level}
             className={`h-1 flex-1 rounded-full transition-all duration-300 ${
-              strength >= level ? STRENGTH_COLORS[strength] : "bg-slate-200"
+              strength >= level
+                ? STRENGTH_SEGMENT_COLORS[level - 1]
+                : "bg-white/10"
             }`}
           />
         ))}
       </div>
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-zinc-500">
         Strength:{" "}
         <span
           className={`font-medium ${
             strength <= 1
-              ? "text-red-600"
+              ? "text-red-400"
               : strength === 2
-                ? "text-amber-600"
+                ? "text-orange-400"
                 : strength === 3
-                  ? "text-violet-600"
-                  : "text-emerald-600"
+                  ? "text-indigo-400"
+                  : "text-emerald-400"
           }`}
         >
           {STRENGTH_LABELS[strength]}
         </span>
-        {strength < 1 && password.length > 0 && (
-          <span className="text-slate-400"> · min. 6 characters</span>
-        )}
       </p>
     </div>
   );
@@ -176,7 +175,6 @@ type PasswordFieldProps = {
   onChange: (value: string) => void;
   autoComplete?: string;
   required?: boolean;
-  placeholder?: string;
   showStrength?: boolean;
 };
 
@@ -187,22 +185,14 @@ export function PasswordField({
   onChange,
   autoComplete,
   required = true,
-  placeholder = "Enter your password",
   showStrength = false,
 }: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
   const [focused, setFocused] = useState(false);
+  const hasValue = value.length > 0;
 
   return (
     <div>
-      <label
-        htmlFor={id}
-        className={`mb-1.5 block text-sm font-medium transition-colors ${
-          focused ? "text-violet-700" : "text-slate-700"
-        }`}
-      >
-        {label}
-      </label>
       <div className="relative">
         <input
           id={id}
@@ -213,51 +203,103 @@ export function PasswordField({
           onBlur={() => setFocused(false)}
           autoComplete={autoComplete}
           required={required}
-          placeholder={placeholder}
-          className={`w-full rounded-lg border bg-white py-2.5 pl-3 pr-10 text-sm text-slate-900 outline-none transition-all duration-200 placeholder:text-slate-400 ${
-            focused
-              ? "border-violet-500 ring-2 ring-violet-100"
-              : "border-slate-300 hover:border-slate-400"
-          }`}
+          placeholder=" "
+          className={`${inputBase} pr-11 ${fieldBorderClass(focused, false, false)}`}
         />
+        <label htmlFor={id} className={floatingLabelClass(focused, hasValue)}>
+          {label}
+        </label>
         <button
           type="button"
           onClick={() => setVisible((current) => !current)}
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-zinc-400 transition hover:bg-white/10 hover:text-zinc-200"
           aria-label={visible ? "Hide password" : "Show password"}
         >
           {visible ? <EyeOffIcon /> : <EyeIcon />}
         </button>
       </div>
-      {showStrength ? (
-        <PasswordStrengthMeter password={value} />
-      ) : null}
+      {showStrength ? <PasswordStrengthMeter password={value} /> : null}
     </div>
   );
 }
 
-export function AuthError({ message }: { message: string | null }) {
-  if (!message) return null;
-
+export function AuthTermsCheckbox({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
   return (
-    <div
-      role="alert"
-      className="animate-auth-shake rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-    >
-      {message}
-    </div>
+    <label className="flex cursor-pointer items-start gap-3 text-sm text-zinc-400">
+      <span className="relative mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="peer sr-only"
+        />
+        <span className="h-4 w-4 rounded border border-white/20 bg-white/[0.04] transition peer-checked:border-indigo-500 peer-checked:bg-indigo-600" />
+        <svg
+          className="pointer-events-none absolute h-2.5 w-2.5 text-white opacity-0 transition peer-checked:opacity-100"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth="3"
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+      </span>
+      <span>
+        I agree to the{" "}
+        <span className="text-indigo-400">Terms of Service</span> and{" "}
+        <span className="text-indigo-400">Privacy Policy</span>
+      </span>
+    </label>
   );
 }
 
-export function AuthSuccess({ message }: { message: string | null }) {
-  if (!message) return null;
-
+export function AuthRememberForgot({
+  remember,
+  onRememberChange,
+  onForgotPassword,
+}: {
+  remember: boolean;
+  onRememberChange: (value: boolean) => void;
+  onForgotPassword: () => void;
+}) {
   return (
-    <div
-      role="status"
-      className="animate-auth-fade-in rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
-    >
-      {message}
+    <div className="flex items-center justify-between text-sm">
+      <label className="flex cursor-pointer items-center gap-2 text-zinc-400">
+        <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => onRememberChange(e.target.checked)}
+            className="peer sr-only"
+          />
+          <span className="h-4 w-4 rounded border border-white/20 bg-white/[0.04] transition peer-checked:border-indigo-500 peer-checked:bg-indigo-600" />
+          <svg
+            className="pointer-events-none absolute h-2.5 w-2.5 text-white opacity-0 transition peer-checked:opacity-100"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="3"
+            aria-hidden="true"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </span>
+        Remember me
+      </label>
+      <button
+        type="button"
+        onClick={onForgotPassword}
+        className="font-medium text-indigo-400 transition hover:text-indigo-300"
+      >
+        Forgot password?
+      </button>
     </div>
   );
 }
@@ -283,10 +325,12 @@ function Spinner() {
 
 export function AuthSubmitButton({
   label,
+  loadingLabel,
   loading,
   disabled = false,
 }: {
   label: string;
+  loadingLabel: string;
   loading: boolean;
   disabled?: boolean;
 }) {
@@ -296,14 +340,17 @@ export function AuthSubmitButton({
     <button
       type="submit"
       disabled={isDisabled}
-      className={`flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-all duration-200 ${
+      className={`auth-gradient-btn group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl px-4 py-3 text-sm font-semibold text-white transition-all duration-200 ${
         isDisabled
-          ? "cursor-not-allowed bg-violet-400"
-          : "bg-violet-600 hover:bg-violet-700 hover:shadow-md hover:shadow-violet-200 active:scale-[0.98]"
+          ? "cursor-not-allowed opacity-50"
+          : "hover:shadow-lg hover:shadow-indigo-900/40 active:scale-[0.98]"
       }`}
     >
-      {loading && <Spinner />}
-      {loading ? "Please wait..." : label}
+      <span className="auth-btn-shimmer pointer-events-none absolute inset-0" aria-hidden="true" />
+      <span className="relative flex items-center gap-2">
+        {loading && <Spinner />}
+        {loading ? loadingLabel : label}
+      </span>
     </button>
   );
 }
@@ -322,7 +369,7 @@ export function AuthFooterLink({
       {prompt}{" "}
       <Link
         href={href}
-        className="font-semibold text-violet-600 underline-offset-2 transition hover:text-violet-700 hover:underline"
+        className="font-semibold text-indigo-400 underline-offset-2 transition hover:text-indigo-300 hover:underline"
       >
         {linkText}
       </Link>

@@ -24,6 +24,35 @@ from worker.cost_analysis import format_usd
 from worker.version import REPORT_TITLE
 
 
+
+PDF_BODY_FONT_SIZE = 10
+PDF_BODY_LEADING = 14
+PDF_CELL_FONT_SIZE = 7.5
+PDF_CELL_LEADING = 10.5
+
+
+def _pdf_body_style(parent: ParagraphStyle) -> ParagraphStyle:
+    return ParagraphStyle(
+        "ReportBody",
+        parent=parent,
+        fontName="Helvetica",
+        fontSize=PDF_BODY_FONT_SIZE,
+        leading=PDF_BODY_LEADING,
+        textColor=colors.HexColor("#111827"),
+    )
+
+
+def _pdf_cell_style(parent: ParagraphStyle) -> ParagraphStyle:
+    return ParagraphStyle(
+        "ReportCell",
+        parent=parent,
+        fontName="Helvetica",
+        fontSize=PDF_CELL_FONT_SIZE,
+        leading=PDF_CELL_LEADING,
+        textColor=colors.HexColor("#1f2937"),
+    )
+
+
 def _escape_pdf_text(text: str) -> str:
     return (
         text.replace("&", "&amp;")
@@ -40,10 +69,10 @@ def _table_style(header: bool = True) -> TableStyle:
     commands = [
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]
     if header:
         commands.extend(
@@ -53,7 +82,11 @@ def _table_style(header: bool = True) -> TableStyle:
                 ("FONTSIZE", (0, 0), (-1, 0), 8),
             ]
         )
-    commands.append(("FONTSIZE", (0, 1), (-1, -1), 7.5))
+    commands.extend([
+        ("FONTSIZE", (0, 1), (-1, -1), PDF_CELL_FONT_SIZE),
+        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+        ("TEXTCOLOR", (0, 1), (-1, -1), colors.HexColor("#1f2937")),
+    ])
     return TableStyle(commands)
 
 
@@ -102,12 +135,7 @@ def _append_prompting_recommendations(story: list, summary: dict, body_style, he
     if not coaching:
         return
 
-    cell_style = ParagraphStyle(
-        "TableCell",
-        parent=body_style,
-        fontSize=7.5,
-        leading=9,
-    )
+    cell_style = _pdf_cell_style(body_style)
     subheading_style = ParagraphStyle(
         "PromptingSubheading",
         parent=heading_style,
@@ -153,20 +181,6 @@ def _append_prompting_recommendations(story: list, summary: dict, body_style, he
             story.append(Spacer(1, 0.06 * inch))
             story.append(Paragraph(_escape_pdf_text(efficiency["verdict"]), body_style))
 
-    task_type = coaching.get("task_type") or {}
-    if task_type.get("label"):
-        story.append(
-            Paragraph(
-                f"<b>Task type:</b> {task_type['label']} "
-                f"({task_type.get('confidence', 0)}% confidence)",
-                body_style,
-            )
-        )
-        if task_type.get("rationale"):
-            story.append(
-                Paragraph(_escape_pdf_text(task_type["rationale"]), body_style)
-            )
-
     clusters = coaching.get("redundancy_clusters") or []
     techniques = coaching.get("prompting_techniques") or []
     if clusters or techniques:
@@ -199,7 +213,27 @@ def _append_prompting_recommendations(story: list, summary: dict, body_style, he
             for tech in techniques:
                 story.append(Paragraph(f"• {_escape_pdf_text(tech)}", body_style))
 
+    story.append(Spacer(1, 0.25 * inch))
+
+
+def _append_task_aware_model_advice(story: list, summary: dict, body_style, heading_style) -> None:
+    coaching = _coaching_payload(summary)
+    if not coaching:
+        return
+
+    cell_style = _pdf_cell_style(body_style)
+    subheading_style = ParagraphStyle(
+        "PromptingSubheading",
+        parent=heading_style,
+        fontSize=12,
+        spaceBefore=10,
+        spaceAfter=6,
+    )
+
     model_advice = coaching.get("model_advice") or {}
+    if not model_advice:
+        return
+
     story.append(Paragraph("Task-aware model advice", subheading_style))
     if model_advice.get("rationale"):
         story.append(
@@ -283,14 +317,18 @@ def build_pdf_report(
         spaceAfter=12,
         textColor=colors.HexColor("#1f2937"),
     )
-    heading_style = styles["Heading2"]
-    body_style = styles["BodyText"]
-    cell_style = ParagraphStyle(
-        "BodyCell",
-        parent=body_style,
-        fontSize=7.5,
-        leading=9,
+    heading_style = ParagraphStyle(
+        "ReportHeading",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=12,
+        leading=15,
+        textColor=colors.HexColor("#111827"),
+        spaceBefore=10,
+        spaceAfter=6,
     )
+    body_style = _pdf_body_style(styles["BodyText"])
+    cell_style = _pdf_cell_style(body_style)
 
     story: list = []
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -319,11 +357,9 @@ def build_pdf_report(
     )
     story.append(Spacer(1, 0.3 * inch))
 
-    _append_prompting_recommendations(story, summary, body_style, heading_style)
-
     user_eval = summary.get("user_evaluation") or {}
     if user_eval:
-        story.append(Paragraph("How effectively the user uses AI tools", heading_style))
+        story.append(Paragraph("How efficiently the user uses AI tools", heading_style))
         overall = user_eval.get("overall_score", 0)
         grade = user_eval.get("grade", "—")
         story.append(
@@ -338,12 +374,6 @@ def build_pdf_report(
         story.append(Spacer(1, 0.1 * inch))
 
         dimensions = user_eval.get("dimensions", [])
-        nightingale = nightingale_chart(dimensions, title="Skill scores (Nightingale)")
-        story.append(
-            Image(io.BytesIO(nightingale), width=4.2 * inch, height=4.2 * inch)
-        )
-        story.append(Spacer(1, 0.12 * inch))
-
         dimension_rows = [["Skill", "Score", "Description", "Assessment"]]
         for dim in dimensions:
             dimension_rows.append(
@@ -448,12 +478,30 @@ def build_pdf_report(
 
         story.append(Spacer(1, 0.25 * inch))
 
+    if user_eval:
+        dimensions = user_eval.get("dimensions", [])
+        nightingale = nightingale_chart(dimensions, title="Skill scores")
+        story.append(
+            Image(io.BytesIO(nightingale), width=5.0 * inch, height=5.0 * inch)
+        )
+        story.append(Spacer(1, 0.12 * inch))
+
     turn_chart = tokens_by_turn_chart(summary.get("tokens_by_turn", []))
     role_chart = role_share_chart(
         summary.get("user_tokens", 0),
         summary.get("agent_tokens", 0),
     )
-    story.append(Paragraph("Charts", heading_style))
+    story.append(Paragraph("Tokens Analysis", heading_style))
+    story.append(
+        Paragraph(
+            "The bar chart shows token usage for each conversation turn in this transcript "
+            "(user turns vs agent turns). The pie chart shows how total tokens are split "
+            f"between your messages ({summary.get('user_tokens', 0):,} tokens) and AI responses "
+            f"({summary.get('agent_tokens', 0):,} tokens).",
+            body_style,
+        )
+    )
+    story.append(Spacer(1, 0.1 * inch))
     story.append(Image(io.BytesIO(turn_chart), width=6.5 * inch, height=3.2 * inch))
     story.append(Spacer(1, 0.15 * inch))
     story.append(Image(io.BytesIO(role_chart), width=3.5 * inch, height=3.5 * inch))
@@ -496,6 +544,9 @@ def build_pdf_report(
             ]
         )
     )
+
+    _append_prompting_recommendations(story, summary, body_style, heading_style)
+    _append_task_aware_model_advice(story, summary, body_style, heading_style)
 
     doc.build(story)
     buffer.seek(0)

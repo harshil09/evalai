@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
+import { matchesEvaluationSearch } from "@/components/dashboard/dashboard-utils";
 
 export type Evaluation = {
   id: string;
@@ -20,6 +21,7 @@ export type Evaluation = {
 
 type EvaluationHistoryProps = {
   refreshKey: number;
+  searchQuery?: string;
 };
 
 const STATUS_LABELS: Record<Evaluation["status"], string> = {
@@ -30,10 +32,10 @@ const STATUS_LABELS: Record<Evaluation["status"], string> = {
 };
 
 const STATUS_COLORS: Record<Evaluation["status"], string> = {
-  pending: "bg-zinc-100 text-zinc-700",
-  processing: "bg-blue-100 text-blue-800",
-  completed: "bg-green-100 text-green-800",
-  failed: "bg-red-100 text-red-800",
+  pending: "bg-zinc-500/20 text-zinc-300 ring-1 ring-zinc-500/30",
+  processing: "bg-blue-500/20 text-blue-300 ring-1 ring-blue-500/30",
+  completed: "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/30",
+  failed: "bg-red-500/20 text-red-300 ring-1 ring-red-500/30",
 };
 
 const PAGE_SIZE = 5;
@@ -51,7 +53,10 @@ function fileTypeLabel(contentType: string, filename: string | null): string {
   return "Text";
 }
 
-export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps) {
+export default function EvaluationHistory({
+  refreshKey,
+  searchQuery = "",
+}: EvaluationHistoryProps) {
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,38 +66,57 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
 
   const loadEvaluations = useCallback(async () => {
     try {
-      const response = await fetch("/api/evaluations");
-      if (!response.ok) {
-        throw new Error("Failed to load evaluations");
+      const trimmedSearch = searchQuery.trim();
+
+      if (trimmedSearch) {
+        const supabase = createClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) throw new Error("Not signed in");
+
+        const { data, error: fetchError } = await supabase
+          .from("evaluations")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false });
+
+        if (fetchError) throw fetchError;
+        setEvaluations(data ?? []);
+      } else {
+        const response = await fetch("/api/evaluations");
+        if (!response.ok) throw new Error("Failed to load evaluations");
+        const data = (await response.json()) as { evaluations: Evaluation[] };
+        setEvaluations(data.evaluations);
       }
-      const data = (await response.json()) as { evaluations: Evaluation[] };
-      setEvaluations(data.evaluations);
+
       setError(null);
     } catch {
       setError("Could not load your upload history.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [searchQuery]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
+    setLoading(true);
     loadEvaluations();
   }, [loadEvaluations, refreshKey]);
 
+  const filteredEvaluations = searchQuery.trim()
+    ? evaluations.filter((row) => matchesEvaluationSearch(row, searchQuery))
+    : evaluations;
+
+  const visible = filteredEvaluations.slice(0, visibleCount);
+  const hasMore = visibleCount < filteredEvaluations.length;
+
   useEffect(() => {
-    const hasActiveJob = evaluations.some(
-      (evaluation) =>
-        evaluation.status === "pending" || evaluation.status === "processing",
+    const hasActive = evaluations.some(
+      (e) => e.status === "pending" || e.status === "processing",
     );
-    if (!hasActiveJob) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      void loadEvaluations();
-    }, 4000);
-
+    if (!hasActive) return;
+    const interval = window.setInterval(() => void loadEvaluations(), 4000);
     return () => window.clearInterval(interval);
   }, [evaluations, loadEvaluations]);
 
@@ -101,26 +125,18 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
-    async function subscribeToEvaluations() {
+    async function subscribe() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-
       if (cancelled || !user) return;
 
       channel = supabase
         .channel(`evaluations-history-${user.id}`)
         .on(
           "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "evaluations",
-            filter: `user_id=eq.${user.id}`,
-          },
-          () => {
-            loadEvaluations();
-          },
+          { event: "*", schema: "public", table: "evaluations", filter: `user_id=eq.${user.id}` },
+          () => loadEvaluations(),
         )
         .subscribe();
 
@@ -130,41 +146,26 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
       }
     }
 
-    subscribeToEvaluations();
-
+    subscribe();
     return () => {
       cancelled = true;
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
+      if (channel) supabase.removeChannel(channel);
     };
   }, [loadEvaluations]);
 
-  async function deleteEvaluation(evaluationId: string, displayName: string) {
-    const confirmed = window.confirm(
-      `Delete "${displayName}"? This removes the transcript, PDF report, and record permanently.`,
-    );
-    if (!confirmed) {
+  async function deleteEvaluation(id: string, name: string) {
+    if (!window.confirm(`Delete "${name}"? This removes the transcript, PDF, and record.`)) {
       return;
     }
-
-    setDeletingId(evaluationId);
+    setDeletingId(id);
     setError(null);
-
     try {
-      const response = await fetch(`/api/evaluations/${evaluationId}`, {
-        method: "DELETE",
-      });
+      const response = await fetch(`/api/evaluations/${id}`, { method: "DELETE" });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(
-          (payload as { error?: string }).error || "Could not delete evaluation",
-        );
+        throw new Error((payload as { error?: string }).error || "Could not delete");
       }
-
-      setEvaluations((current) =>
-        current.filter((evaluation) => evaluation.id !== evaluationId),
-      );
+      setEvaluations((rows) => rows.filter((row) => row.id !== id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
     } finally {
@@ -172,36 +173,21 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
     }
   }
 
-  async function downloadFile(
-    evaluationId: string,
-    type: "transcript" | "report",
-  ) {
-    setDownloadingId(`${evaluationId}-${type}`);
+  async function downloadFile(id: string, type: "transcript" | "report") {
+    setDownloadingId(`${id}-${type}`);
     setError(null);
-
     try {
-      const response = await fetch(`/api/evaluations/${evaluationId}/${type}`);
+      const response = await fetch(`/api/evaluations/${id}/${type}`);
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        const message = (payload as { error?: string }).error;
-        throw new Error(
-          message ||
-            (response.status === 401
-              ? "Session expired. Refresh the page and sign in again."
-              : type === "report"
-                ? "Report is not ready yet."
-                : "Transcript unavailable."),
-        );
+        throw new Error((payload as { error?: string }).error || "Download failed");
       }
-
       const data = (await response.json()) as { url: string; filename?: string };
       const link = document.createElement("a");
       link.href = data.url;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
-      if (data.filename) {
-        link.download = data.filename;
-      }
+      if (data.filename) link.download = data.filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -212,19 +198,18 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
     }
   }
 
-  const visibleEvaluations = evaluations.slice(0, visibleCount);
-  const hasMore = visibleCount < evaluations.length;
+  if (loading) return <p className="text-sm text-zinc-500">Loading history...</p>;
 
-  if (loading) {
-    return <p className="text-sm text-zinc-500">Loading history...</p>;
-  }
-
-  if (evaluations.length === 0) {
+  if (filteredEvaluations.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-6 py-12 text-center">
-        <p className="font-medium text-zinc-900">No uploads in the last 7 days</p>
+      <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.02] px-6 py-12 text-center">
+        <p className="font-medium text-white">
+          {searchQuery.trim() ? "No documents match your search" : "No uploads in the last 7 days"}
+        </p>
         <p className="mt-1 text-sm text-zinc-500">
-          Upload a transcript to see it here. Older evaluations are not shown in History.
+          {searchQuery.trim()
+            ? "Try a different file name or date."
+            : "Upload a transcript to see it here."}
         </p>
       </div>
     );
@@ -232,24 +217,21 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
 
   return (
     <div className="space-y-4">
-      {evaluations.some(
-        (evaluation) =>
-          evaluation.status === "pending" || evaluation.status === "processing",
-      ) && (
-        <p className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-          Analysis in progress — this page refreshes automatically every few seconds.
+      {evaluations.some((e) => e.status === "pending" || e.status === "processing") && (
+        <p className="rounded-xl border border-blue-500/25 bg-blue-500/10 px-3 py-2 text-sm text-blue-200">
+          Analysis in progress — refreshing automatically.
         </p>
       )}
       {error && (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
           {error}
         </p>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-zinc-200">
+      <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.02]">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-left text-sm">
-            <thead className="border-b border-zinc-200 bg-zinc-50 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            <thead className="border-b border-white/10 bg-white/[0.03] text-xs font-semibold uppercase tracking-wide text-zinc-500">
               <tr>
                 <th className="px-4 py-3">Transcript</th>
                 <th className="px-4 py-3">Uploaded</th>
@@ -260,51 +242,32 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100 bg-white">
-              {visibleEvaluations.map((evaluation) => {
-        const summary = evaluation.evaluation_summary as {
-          total_tokens?: number;
-          prompting_recommendations?: {
-            prompt_efficiency?: {
-              efficiency_score?: number;
-              grade?: string;
-            };
-          };
-        } | null;
-                const displayName =
-                  evaluation.title || evaluation.original_filename || "Untitled";
-                const isDownloadingTranscript =
-                  downloadingId === `${evaluation.id}-transcript`;
-                const isDownloadingReport =
-                  downloadingId === `${evaluation.id}-report`;
-                const isDeleting = deletingId === evaluation.id;
+            <tbody className="divide-y divide-white/[0.06]">
+              {visible.map((evaluation) => {
+                const summary = evaluation.evaluation_summary as {
+                  total_tokens?: number;
+                  prompting_recommendations?: {
+                    prompt_efficiency?: { efficiency_score?: number; grade?: string };
+                  };
+                } | null;
+                const name = evaluation.title || evaluation.original_filename || "Untitled";
 
                 return (
-                  <tr key={evaluation.id} className="align-top">
+                  <tr key={evaluation.id} className="align-top hover:bg-white/[0.02]">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-zinc-900">{displayName}</p>
+                      <p className="font-medium text-white">{name}</p>
                       <p className="mt-0.5 text-xs text-zinc-500">
                         {formatFileSize(evaluation.file_size_bytes)}
                       </p>
-                      {evaluation.status === "failed" && evaluation.error_message && (
-                        <p className="mt-1 text-xs text-red-600">
-                          {evaluation.error_message}
-                        </p>
-                      )}
                     </td>
-                    <td className="px-4 py-3 text-zinc-600">
-                      <time dateTime={evaluation.created_at}>
-                        {new Date(evaluation.created_at).toLocaleDateString()}
-                      </time>
-                      <p className="text-xs text-zinc-400">
+                    <td className="px-4 py-3 text-zinc-400">
+                      {new Date(evaluation.created_at).toLocaleDateString()}
+                      <p className="text-xs text-zinc-600">
                         {new Date(evaluation.created_at).toLocaleTimeString()}
                       </p>
                     </td>
-                    <td className="px-4 py-3 text-zinc-600">
-                      {fileTypeLabel(
-                        evaluation.content_type,
-                        evaluation.original_filename,
-                      )}
+                    <td className="px-4 py-3 text-zinc-400">
+                      {fileTypeLabel(evaluation.content_type, evaluation.original_filename)}
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -313,29 +276,25 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
                         {STATUS_LABELS[evaluation.status]}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-zinc-600">
+                    <td className="px-4 py-3 text-zinc-300">
                       {evaluation.status === "completed" && summary?.total_tokens != null
                         ? summary.total_tokens.toLocaleString()
                         : "—"}
                     </td>
                     <td className="px-4 py-3">
                       {evaluation.status === "completed" &&
-                      summary?.prompting_recommendations?.prompt_efficiency
-                        ?.efficiency_score != null ? (
+                      summary?.prompting_recommendations?.prompt_efficiency?.efficiency_score !=
+                        null ? (
                         <div>
-                          <p className="font-medium text-zinc-900">
-                            {
-                              summary.prompting_recommendations.prompt_efficiency
-                                .efficiency_score
-                            }
-                            %
+                          <p className="font-medium text-white">
+                            {summary.prompting_recommendations.prompt_efficiency.efficiency_score}%
                           </p>
                           <p className="text-xs text-zinc-500">
                             {summary.prompting_recommendations.prompt_efficiency.grade}
                           </p>
                         </div>
                       ) : (
-                        <span className="text-zinc-400">—</span>
+                        <span className="text-zinc-600">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -343,28 +302,29 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
                         <button
                           type="button"
                           onClick={() => downloadFile(evaluation.id, "transcript")}
-                          disabled={isDownloadingTranscript}
-                          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-800 transition hover:bg-zinc-50 disabled:opacity-50"
+                          disabled={downloadingId === `${evaluation.id}-transcript`}
+                          className="rounded-lg border border-white/15 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:border-indigo-400/40 disabled:opacity-50"
                         >
-                          {isDownloadingTranscript ? "Loading..." : "Transcript"}
+                          Transcript
                         </button>
                         <button
                           type="button"
                           onClick={() => downloadFile(evaluation.id, "report")}
                           disabled={
-                            evaluation.status !== "completed" || isDownloadingReport
+                            evaluation.status !== "completed" ||
+                            downloadingId === `${evaluation.id}-report`
                           }
-                          className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="auth-gradient-btn rounded-lg px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
                         >
-                          {isDownloadingReport ? "Loading..." : "PDF report"}
+                          PDF report
                         </button>
                         <button
                           type="button"
-                          onClick={() => deleteEvaluation(evaluation.id, displayName)}
-                          disabled={isDeleting}
-                          className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                          onClick={() => deleteEvaluation(evaluation.id, name)}
+                          disabled={deletingId === evaluation.id}
+                          className="rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-500/10 disabled:opacity-50"
                         >
-                          {isDeleting ? "Deleting..." : "Delete"}
+                          Delete
                         </button>
                       </div>
                     </td>
@@ -380,8 +340,8 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
         <div className="flex justify-center">
           <button
             type="button"
-            onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
-            className="rounded-lg border border-zinc-300 bg-white px-5 py-2.5 text-sm font-medium text-zinc-800 transition hover:bg-zinc-50"
+            onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-5 py-2.5 text-sm font-medium text-zinc-200 hover:bg-white/[0.08]"
           >
             Load more
           </button>
@@ -389,9 +349,8 @@ export default function EvaluationHistory({ refreshKey }: EvaluationHistoryProps
       )}
 
       <p className="text-xs text-zinc-500">
-        Showing {visibleEvaluations.length} of {evaluations.length} upload
-        {evaluations.length === 1 ? "" : "s"} in your history. PDF reports are available
-        when status is Completed.
+        Showing {visible.length} of {filteredEvaluations.length}
+        {searchQuery.trim() ? " matching" : ""} uploads in your history.
       </p>
     </div>
   );

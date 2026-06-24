@@ -6,12 +6,13 @@ import { createClient } from "@/utils/supabase/client";
 import { isValidEmail } from "@/components/auth/auth-utils";
 import AuthShell from "@/components/auth/AuthShell";
 import {
-  AuthError,
   AuthField,
   AuthFooterLink,
   AuthSubmitButton,
+  AuthTermsCheckbox,
   PasswordField,
 } from "@/components/auth/AuthForm";
+import { showAuthToast } from "@/components/auth/AuthToast";
 
 function getConfigError(): string | null {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
@@ -32,7 +33,7 @@ export default function SignUpPage() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(configError);
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const canSubmit =
@@ -40,17 +41,21 @@ export default function SignUpPage() {
     lastName.trim().length > 0 &&
     isValidEmail(email) &&
     password.length >= 6 &&
+    termsAccepted &&
     !configError;
 
   async function handleSignUp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError(null);
     if (configError) {
-      setError(configError);
+      showAuthToast("error", configError);
+      return;
+    }
+    if (!termsAccepted) {
+      showAuthToast("error", "Please accept the Terms of Service to continue.");
       return;
     }
     if (!canSubmit) {
-      setError("Please fill in all fields. Password must be at least 6 characters.");
+      showAuthToast("error", "Please fill in all fields. Password must be at least 6 characters.");
       return;
     }
     setLoading(true);
@@ -70,19 +75,20 @@ export default function SignUpPage() {
       });
 
       if (signUpError) {
-        setError(signUpError.message);
+        showAuthToast("error", signUpError.message);
         return;
       }
       if (data.user?.identities?.length === 0) {
-        setError("An account with this email may already exist. Try signing in.");
+        showAuthToast("error", "An account with this email may already exist. Try signing in.");
         return;
       }
       if (data.session) {
         await supabase.auth.signOut();
       }
+      showAuthToast("success", "Account created! Sign in to continue.");
       router.replace(`/signin?registered=1&email=${encodeURIComponent(trimmedEmail)}`);
     } catch {
-      setError("Something went wrong. Please try again.");
+      showAuthToast("error", "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -94,36 +100,33 @@ export default function SignUpPage() {
       title="Create your account"
       subtitle="Upload AI transcripts and receive structured efficiency reports."
       footer={
-        <AuthFooterLink prompt="Already have an account?" href="/signin" linkText="Log in" />
+        <AuthFooterLink prompt="Already have an account?" href="/signin" linkText="Sign in" />
       }
     >
       <form onSubmit={handleSignUp} className="space-y-5">
         <div className="grid gap-5 sm:grid-cols-2">
           <AuthField
             id="firstName"
-            label="First Name"
+            label="First name"
             value={firstName}
             onChange={setFirstName}
             autoComplete="given-name"
-            placeholder="eg. John"
           />
           <AuthField
             id="lastName"
-            label="Last Name"
+            label="Last name"
             value={lastName}
             onChange={setLastName}
             autoComplete="family-name"
-            placeholder="eg. Francisco"
           />
         </div>
         <AuthField
           id="email"
-          label="Email"
+          label="Email address"
           type="email"
           value={email}
           onChange={setEmail}
           autoComplete="email"
-          placeholder="eg. john@example.com"
           validateEmail
         />
         <PasswordField
@@ -134,8 +137,13 @@ export default function SignUpPage() {
           autoComplete="new-password"
           showStrength
         />
-        <AuthError message={error} />
-        <AuthSubmitButton label="Sign up" loading={loading} disabled={!canSubmit} />
+        <AuthTermsCheckbox checked={termsAccepted} onChange={setTermsAccepted} />
+        <AuthSubmitButton
+          label="Create account"
+          loadingLabel="Creating account…"
+          loading={loading}
+          disabled={!canSubmit}
+        />
       </form>
     </AuthShell>
   );
