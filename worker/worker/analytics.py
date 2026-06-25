@@ -1,10 +1,18 @@
 import tiktoken
 
 from worker.config import get_settings
-from worker.cost_analysis import build_cost_analysis
+from worker.cost_analysis import (
+    REFERENCE_STRATEGY_LEGACY,
+    REFERENCE_STRATEGY_TASK_TIER,
+    build_cost_analysis,
+)
 from worker.model_catalog import load_model_catalog
 from worker.parser import Turn
-from worker.prompting_coach import build_prompting_recommendations
+from worker.prompting_coach import (
+    build_prompting_recommendations,
+    classify_task_complexity,
+    pick_tier_model,
+)
 from worker.user_evaluation import evaluate_user_ai_usage
 
 
@@ -24,17 +32,53 @@ def count_turn_tokens(turns: list[Turn], encoding_name: str = "cl100k_base") -> 
     return [count_tokens(turn.content, encoding_name) for turn in turns]
 
 
+def _reference_row_label(reference_source: str | None, task_tier: str | None) -> str:
+    source = (reference_source or "").strip()
+    if source == "reported at upload":
+        return "Model reported at upload."
+    if source == "mentioned in transcript":
+        return "Model mentioned in this transcript."
+    if source.startswith("task tier"):
+        tier = task_tier or source.replace("task tier (", "").rstrip(")")
+        return f"Reference baseline for {tier} task complexity."
+    if source.startswith("default ("):
+        return f"Configured default reference ({source[9:-1]})."
+    if source:
+        return f"Reference baseline ({source})."
+    return "Reference model for this session."
+
+
+def _capability_note(task_tier: str | None, savings_pct: float) -> str:
+    tier = task_tier or "moderate"
+    if savings_pct >= 20:
+        if tier == "simple":
+            return "economical for this simple task"
+        if tier == "complex":
+            return "lower cost — confirm quality suffices for this complex task"
+        return "lower cost while suitable for moderate complexity"
+    if savings_pct <= -20:
+        return "higher capability tier — use if reasoning depth was required"
+    if tier == "simple":
+        return "similar cost tier for simple work"
+    if tier == "complex":
+        return "similar cost tier for demanding work"
+    return "similar cost tier for this session"
+
+
 def _model_fit_comparison_note(
     reference_model: str | None,
     model: dict,
     reference_cost: float,
+    *,
+    reference_source: str | None = None,
+    task_tier: str | None = None,
 ) -> str:
     """Short cost/capability note vs the transcript reference model."""
     model_id = model["model_id"]
     if not reference_model:
         return "—"
     if model_id == reference_model:
-        return "Model used or referenced in this transcript."
+        return _reference_row_label(reference_source, task_tier)
 
     cost = float(model.get("est_input_cost_usd", 0))
     if reference_cost > 0:
@@ -42,25 +86,17 @@ def _model_fit_comparison_note(
     else:
         savings_pct = 0.0
 
-    price_per_m = float(model.get("input_price_per_1m", 0) or 0)
-    ref_price = reference_cost / max(model.get("total_tokens", 1), 1) * 1_000_000
-
     if savings_pct >= 25:
         cost_note = f"{savings_pct}% lower input cost"
     elif savings_pct <= -15:
-        cost_note = f"{abs(savings_pct)}% higher cost — stronger reasoning tier"
+        cost_note = f"{abs(savings_pct)}% higher cost"
     else:
-        cost_note = "Similar cost tier"
+        cost_note = "Similar input cost"
 
-    if price_per_m >= 2.0 or ref_price >= 2.0:
-        perf = "better for complex reasoning and multi-step tasks"
-    elif price_per_m <= 0.25:
-        perf = "best for simple transforms, extraction, and short Q&A"
-    else:
-        perf = "balanced cost and capability for moderate tasks"
+    perf = _capability_note(task_tier, savings_pct)
 
     if not model.get("fits"):
-        return f"Does not fit context window — consider a larger-window model."
+        return "Does not fit context window — consider a larger-window model."
 
     if savings_pct >= 20:
         return f"{cost_note}; {perf}. You could reduce spend by switching here."
@@ -77,6 +113,7 @@ def analyze_transcript(
     reserved_output_tokens: int | None = None,
     default_reference_model: str | None = None,
     user_reported_model: str | None = None,
+    reference_strategy: str = REFERENCE_STRATEGY_TASK_TIER,
     use_llm: bool = False,
     llm_coach_model: str = "openai/gpt-4o-mini",
     embedding_model: str = "openai/text-embedding-3-small",
@@ -88,6 +125,8 @@ def analyze_transcript(
         else settings["reserved_output_tokens"]
     )
     reference_model = default_reference_model or "gpt-4o"
+    if reference_strategy not in (REFERENCE_STRATEGY_TASK_TIER, REFERENCE_STRATEGY_LEGACY):
+        reference_strategy = REFERENCE_STRATEGY_TASK_TIER
     encoding_name = "cl100k_base"
 
     tokens_by_turn = count_turn_tokens(turns, encoding_name)
@@ -101,6 +140,7 @@ def analyze_transcript(
     turn_count = len(turns)
     max_turn_tokens = max(tokens_by_turn) if tokens_by_turn else 0
     avg_tokens = round(total_tokens / turn_count, 1) if turn_count else 0
+    user_turn_list = [t for t in turns if t.role == "user"]
 
     if catalog is None:
         catalog, _ = load_model_catalog()
@@ -128,13 +168,34 @@ def analyze_transcript(
 
     recommendations.sort(key=lambda item: (not item["fits"], item["est_input_cost_usd"]))
     best_fit = next((r for r in recommendations if r["fits"]), None)
+
+    task_tier, task_score, task_rationale = classify_task_complexity(
+        turns,
+        user_turn_list,
+        total_tokens,
+        max_turn_tokens,
+    )
+    tier_row = pick_tier_model(task_tier, recommendations)
+    tier_recommended_model = tier_row["model_id"] if tier_row else None
+
+    task_profile = {
+        "complexity_tier": task_tier,
+        "complexity_score": task_score,
+        "complexity_rationale": task_rationale,
+        "tier_recommended_model": tier_recommended_model,
+    }
+
     cost_analysis = build_cost_analysis(
         turns,
         recommendations,
         user_reported_model=user_reported_model,
         default_reference_model=reference_model,
+        reference_strategy=reference_strategy,
+        task_tier=task_tier,
+        tier_recommended_model=tier_recommended_model,
     )
     reference_id = cost_analysis.get("reference_model")
+    reference_source = cost_analysis.get("reference_source")
     reference_row = next(
         (r for r in recommendations if r["model_id"] == reference_id),
         None,
@@ -145,22 +206,35 @@ def analyze_transcript(
         catalog_row = catalog_by_id.get(rec["model_id"], {})
         rec["input_price_per_1m"] = catalog_row.get("input_price_per_1m", 0)
         rec["comparison_note"] = _model_fit_comparison_note(
-            reference_id, rec, reference_cost
+            reference_id,
+            rec,
+            reference_cost,
+            reference_source=reference_source,
+            task_tier=task_tier,
         )
     user_evaluation = evaluate_user_ai_usage(turns, recommendations, cost_analysis)
     prompting_recommendations = build_prompting_recommendations(
         turns,
         tokens_by_turn=tokens_by_turn,
         total_tokens=total_tokens,
+        user_tokens=user_tokens,
         max_turn_tokens=max_turn_tokens,
         encoding_name=encoding_name,
         user_evaluation=user_evaluation,
         cost_analysis=cost_analysis,
         recommendations=recommendations,
+        task_profile=task_profile,
         use_llm=use_llm,
         llm_coach_model=llm_coach_model,
         embedding_model=embedding_model,
     )
+
+    session_profile = prompting_recommendations.get("session_profile") or {}
+    if session_profile:
+        session_profile = {
+            **session_profile,
+            "task": task_profile,
+        }
 
     return {
         "encoding_used": encoding_name,
@@ -184,7 +258,9 @@ def analyze_transcript(
         "parse_warnings": parse_warnings,
         "user_evaluation": user_evaluation,
         "prompting_recommendations": prompting_recommendations,
+        "session_profile": session_profile,
         "reserved_output_tokens": reserved,
         "default_reference_model": reference_model,
+        "reference_strategy": reference_strategy,
         "user_reported_model": (user_reported_model or "").strip() or None,
     }

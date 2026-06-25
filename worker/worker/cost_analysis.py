@@ -34,6 +34,8 @@ MODEL_DETECTION_RULES: list[tuple[re.Pattern[str], str]] = [
 ]
 
 DEFAULT_REFERENCE_MODEL = "gpt-4o"
+REFERENCE_STRATEGY_TASK_TIER = "task_tier"
+REFERENCE_STRATEGY_LEGACY = "legacy"
 
 
 def format_usd(amount: float) -> str:
@@ -69,10 +71,13 @@ def pick_reference_model(
     *,
     user_reported_model: str | None = None,
     default_reference_model: str = DEFAULT_REFERENCE_MODEL,
+    reference_strategy: str = REFERENCE_STRATEGY_TASK_TIER,
+    task_tier: str | None = None,
+    tier_recommended_model: str | None = None,
 ) -> tuple[str, str]:
     """
     Reference model for savings comparison.
-    Priority: user-reported at upload → mentioned in transcript → configured default → premium fitting.
+    Priority: user-reported → transcript mention → task-tier recommended → default → premium.
     """
     by_id = {row["model_id"]: row for row in recommendations}
     fitting = [row for row in recommendations if row.get("fits")]
@@ -83,6 +88,16 @@ def pick_reference_model(
 
     if detected and detected in by_id:
         return detected, "mentioned in transcript"
+
+    tier_model = (tier_recommended_model or "").strip()
+    if (
+        reference_strategy == REFERENCE_STRATEGY_TASK_TIER
+        and tier_model
+        and tier_model in by_id
+        and by_id[tier_model].get("fits")
+    ):
+        label = task_tier or "task"
+        return tier_model, f"task tier ({label})"
 
     if default_reference_model in by_id and by_id[default_reference_model].get("fits"):
         return default_reference_model, f"default ({default_reference_model})"
@@ -100,6 +115,9 @@ def build_cost_analysis(
     *,
     user_reported_model: str | None = None,
     default_reference_model: str = DEFAULT_REFERENCE_MODEL,
+    reference_strategy: str = REFERENCE_STRATEGY_TASK_TIER,
+    task_tier: str | None = None,
+    tier_recommended_model: str | None = None,
 ) -> dict:
     fitting = [row for row in recommendations if row.get("fits")]
     if not fitting:
@@ -122,6 +140,9 @@ def build_cost_analysis(
         recommendations,
         user_reported_model=user_reported_model,
         default_reference_model=default_reference_model,
+        reference_strategy=reference_strategy,
+        task_tier=task_tier,
+        tier_recommended_model=tier_recommended_model,
     )
 
     reference_row = next(row for row in recommendations if row["model_id"] == reference_id)
@@ -165,6 +186,9 @@ def build_cost_analysis(
         "detected_model": detected,
         "reference_model": reference_id,
         "reference_source": reference_source,
+        "reference_strategy": reference_strategy,
+        "task_tier": task_tier,
+        "tier_recommended_model": tier_recommended_model,
         "recommended_model": recommended_row["model_id"],
         "reference_cost_usd": round(reference_cost, 8),
         "reference_cost_label": format_usd(reference_cost),

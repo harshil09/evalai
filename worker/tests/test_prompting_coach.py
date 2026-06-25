@@ -83,7 +83,7 @@ def test_short_dev_commands_not_all_vague():
         recommendations=_minimal_recommendations(),
         use_llm=False,
     )
-    issues = [n.get("issue") for n in result.get("coaching_notes", [])]
+    issues = [n.get("issue") for n in result.get("turn_suggestions", [])]
     vague_count = sum(1 for i in issues if "vague" in str(i))
     assert vague_count < len(user_turns), "Short dev commands should not all be vague"
 
@@ -114,8 +114,8 @@ def test_llm_off_returns_hybrid_methodology():
         recommendations=_minimal_recommendations(),
         use_llm=False,
     )
-    assert "rules" in result.get("methodology", "").lower()
-    assert "waste_buckets" not in result
+    assert "rule-based" in result.get("methodology", "").lower()
+    assert "session_profile" in result
 
 
 if __name__ == "__main__":

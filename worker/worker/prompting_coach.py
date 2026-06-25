@@ -8,9 +8,8 @@ from statistics import median
 import tiktoken
 
 from worker.cost_analysis import format_usd
-from worker.llm_coach import enrich_turn_suggestions
+from worker.session_profile import compute_efficiency_grade, compute_prompt_quality
 from worker.parser import Turn
-from worker.similarity import cluster_redundant_turns, redundancy_matrix
 from worker.user_evaluation import (
     DECOMPOSE_PATTERNS,
     ONE_SHOT_EXPECTATION,
@@ -62,10 +61,6 @@ AGENTIC_PATTERNS = re.compile(
     r"\b(agent|workflow|multi.?step|tool use|autonomous|handoff|orchestrat)\b",
     re.I,
 )
-DEV_COMMAND_PATTERNS = re.compile(
-    r"\b(git|npm|pip|docker|pytest|curl|yarn|pnpm|cargo|make|kubectl|terraform)\b",
-    re.I,
-)
 
 TASK_TYPE_LABELS = {
     "extraction": "Extraction",
@@ -75,6 +70,29 @@ TASK_TYPE_LABELS = {
     "creative": "Creative",
     "agentic": "Agentic",
     "general": "General",
+}
+
+WASTE_BUCKET_ISSUES: dict[str, set[str]] = {
+    "structural": {
+        "repeated_context",
+        "context_dump",
+        "verbose_prompt",
+        "missing_decomposition",
+    },
+    "instruction": {
+        "vague_request",
+        "missing_format",
+        "missing_conciseness",
+        "privacy_risk",
+    },
+    "conversation": {"one_shot_expectation"},
+}
+
+WASTE_BUCKET_FIXES: dict[str, str] = {
+    "structural": "Summarize context once, decompose large asks, and remove filler repetition.",
+    "instruction": "State goal, constraints, and output format in the first message.",
+    "conversation": "Iterate in steps instead of expecting a perfect answer immediately.",
+    "model": "Match model tier to task type — avoid premium models for simple transforms.",
 }
 
 # Preferred models per task-complexity tier (first match wins among fitting models).
@@ -103,17 +121,55 @@ TIER_MODEL_PREFERENCES: dict[str, list[str]] = {
     ],
 }
 
+DIMENSION_PLAYBOOK: dict[str, str] = {
+    "prompting_skills": (
+        "Lead with role, goal, and expected output format in the first sentence."
+    ),
+    "ai_limitations": (
+        "Ask the AI to cite assumptions and flag uncertain claims for human review."
+    ),
+    "problem_decomposition": (
+        "Split large requests into numbered steps and tackle one subtask per turn."
+    ),
+    "tool_choice": (
+        "Match model tier to task complexity — simple formatting tasks rarely need premium models."
+    ),
+    "iteration": (
+        "Refine outputs across turns instead of expecting a perfect first response."
+    ),
+    "context_management": (
+        "Attach IDs, links, and constraints once; reference earlier turns instead of re-pasting."
+    ),
+    "technical_knowledge": (
+        "Name stack, versions, and error messages so the AI can reason precisely."
+    ),
+    "verification_debugging": (
+        "Request reproducible steps, test cases, or validation checks with each fix."
+    ),
+    "automation": (
+        "Describe the workflow end-to-end (trigger → action → output) when automating."
+    ),
+    "agent_understanding": (
+        "Assign explicit subtasks and ask for intermediate checkpoints in agent workflows."
+    ),
+    "privacy": (
+        "Redact secrets and use placeholders (e.g. ending in ****) instead of raw credentials."
+    ),
+    "output_quality": (
+        "Define acceptance criteria: accuracy target, format, and how you will review results."
+    ),
+}
+
 ISSUE_PRIORITY = {
     "privacy_risk": 0,
-    "possibly_vague_request": 1,
-    "possibly_missing_format": 2,
-    "possibly_repeated_context": 3,
+    "vague_request": 1,
+    "missing_format": 2,
     "repeated_context": 3,
-    "possibly_context_dump": 4,
-    "possibly_one_shot_expectation": 5,
-    "possibly_missing_decomposition": 6,
-    "possibly_verbose_prompt": 7,
-    "possibly_missing_conciseness": 8,
+    "context_dump": 4,
+    "one_shot_expectation": 5,
+    "missing_decomposition": 6,
+    "verbose_prompt": 7,
+    "missing_conciseness": 8,
 }
 
 
@@ -152,7 +208,7 @@ def _compress_filler(text: str) -> str:
     return re.sub(r"\s+", " ", compressed).strip()
 
 
-def _classify_task_complexity(
+def classify_task_complexity(
     turns: list[Turn],
     user_turns: list[Turn],
     total_tokens: int,
@@ -205,7 +261,10 @@ def _classify_task_complexity(
     return tier, round(score, 1), rationale
 
 
-def _pick_tier_model(
+_classify_task_complexity = classify_task_complexity
+
+
+def pick_tier_model(
     tier: str,
     recommendations: list[dict],
 ) -> dict | None:
@@ -221,6 +280,9 @@ def _pick_tier_model(
     return cheapest
 
 
+_pick_tier_model = pick_tier_model
+
+
 def _build_model_advice(
     task_tier: str,
     task_score: float,
@@ -228,7 +290,7 @@ def _build_model_advice(
     recommendations: list[dict],
     cost_analysis: dict,
 ) -> dict:
-    tier_row = _pick_tier_model(task_tier, recommendations)
+    tier_row = pick_tier_model(task_tier, recommendations)
     reference_id = cost_analysis.get("reference_model")
     reference_row = next(
         (row for row in recommendations if row["model_id"] == reference_id),
@@ -348,35 +410,30 @@ def _detect_turn_issues(
     if turn.role != "user" or not text:
         return issues
 
-    is_short_dev = len(text.split()) <= 8 and (
-        DEV_COMMAND_PATTERNS.search(text) or TECH_SOFTWARE_PATTERNS.search(text)
-    )
-    if not is_short_dev and (
-        VAGUE_PATTERNS.search(text) or (len(text.split()) < 8 and "?" not in text)
-    ):
+    if VAGUE_PATTERNS.search(text) or (len(text.split()) < 8 and "?" not in text):
         issues.append(
             {
-                "issue": "possibly_vague_request",
+                "issue": "vague_request",
                 "why": "The request lacks a clear goal, context, or expected output.",
                 "suggested_prompt": _suggest_vague_prompt(text),
-                "linked_dimension": "context_management",
+                "linked_dimension": "prompting_skills",
             }
         )
 
     if len(text.split()) >= 6 and not PROMPTING_PATTERNS.search(text) and not FORMAT_PATTERNS.search(text):
         issues.append(
             {
-                "issue": "possibly_missing_format",
+                "issue": "missing_format",
                 "why": "No output format or structure is specified.",
                 "suggested_prompt": _suggest_format_prompt(text),
-                "linked_dimension": "context_management",
+                "linked_dimension": "prompting_skills",
             }
         )
 
     if turn_tokens >= max(400, median_user_tokens * 2.5):
         issues.append(
             {
-                "issue": "possibly_context_dump",
+                "issue": "context_dump",
                 "why": "This turn is much longer than typical — consider summarizing context.",
                 "suggested_prompt": _suggest_concise_prompt(text),
                 "linked_dimension": "context_management",
@@ -390,7 +447,7 @@ def _detect_turn_issues(
     ):
         issues.append(
             {
-                "issue": "possibly_missing_decomposition",
+                "issue": "missing_decomposition",
                 "why": "A large question without steps often leads to unfocused answers.",
                 "suggested_prompt": _suggest_decomposition_prompt(text),
                 "linked_dimension": "problem_decomposition",
@@ -400,7 +457,7 @@ def _detect_turn_issues(
     if ONE_SHOT_EXPECTATION.search(text):
         issues.append(
             {
-                "issue": "possibly_one_shot_expectation",
+                "issue": "one_shot_expectation",
                 "why": "Expecting perfection on the first try usually increases back-and-forth.",
                 "suggested_prompt": (
                     f"Draft a first version for: {_excerpt(text, 80)}. "
@@ -425,7 +482,7 @@ def _detect_turn_issues(
         if overlap >= 0.4 and prior_user_tokens >= 25 and turn_tokens >= 25:
             issues.append(
                 {
-                    "issue": "possibly_repeated_context",
+                    "issue": "repeated_context",
                     "why": (
                         f"High overlap with turn {prior_user_turn.turn_index}; "
                         "reference earlier context instead of re-pasting."
@@ -443,17 +500,17 @@ def _detect_turn_issues(
         if _count_tokens(compressed, encoding_name) < turn_tokens - 5 and compressed != text:
             issues.append(
                 {
-                    "issue": "possibly_verbose_prompt",
+                    "issue": "verbose_prompt",
                     "why": "Filler words inflate token count without adding intent.",
                     "suggested_prompt": _bounded_suggestion(compressed),
-                    "linked_dimension": "context_management",
+                    "linked_dimension": "prompting_skills",
                 }
             )
 
     if turn_tokens >= 120 and not CONCISENESS_PATTERNS.search(text):
         issues.append(
             {
-                "issue": "possibly_missing_conciseness",
+                "issue": "missing_conciseness",
                 "why": "No length constraint — the model may produce overly long replies.",
                 "suggested_prompt": _suggest_concise_prompt(text),
                 "linked_dimension": "context_management",
@@ -528,6 +585,32 @@ def _build_token_savings_estimate(
     }
 
 
+def _playbook_from_dimensions(dimensions: list[dict], limit: int = 4) -> list[str]:
+    sorted_dims = sorted(dimensions, key=lambda item: item.get("score", 100))
+    tips: list[str] = []
+    for dim in sorted_dims:
+        dim_id = dim.get("id", "")
+        tip = DIMENSION_PLAYBOOK.get(dim_id)
+        if tip and tip not in tips:
+            tips.append(tip)
+        if len(tips) >= limit:
+            break
+    return tips
+
+
+def _playbook_from_dimensions(dimensions: list[dict], limit: int = 4) -> list[str]:
+    sorted_dims = sorted(dimensions, key=lambda item: item.get("score", 100))
+    tips: list[str] = []
+    for dim in sorted_dims:
+        dim_id = dim.get("id", "")
+        tip = DIMENSION_PLAYBOOK.get(dim_id)
+        if tip and tip not in tips:
+            tips.append(tip)
+        if len(tips) >= limit:
+            break
+    return tips
+
+
 def _classify_task_type(user_turns: list[Turn]) -> tuple[str, float, str]:
     """Return (task_type_id, confidence 0-100, rationale)."""
     if not user_turns:
@@ -575,173 +658,6 @@ def _classify_task_type(user_turns: list[Turn]) -> tuple[str, float, str]:
     return best_id, confidence, rationales.get(best_id, "")
 
 
-def _collect_rule_candidates(
-    turns: list[Turn],
-    tokens_by_turn: list[int],
-    *,
-    encoding_name: str,
-    median_user_tokens: float,
-) -> list[dict]:
-    candidates: list[dict] = []
-    prior_user: Turn | None = None
-    prior_user_tokens = 0
-
-    for turn, turn_tokens in zip(turns, tokens_by_turn):
-        if turn.role != "user":
-            continue
-        for issue in _detect_turn_issues(
-            turn,
-            turn_tokens,
-            encoding_name=encoding_name,
-            median_user_tokens=median_user_tokens,
-            prior_user_turn=prior_user,
-            prior_user_tokens=prior_user_tokens,
-        ):
-            suggested = issue["suggested_prompt"]
-            suggested_tokens = _count_tokens(suggested, encoding_name)
-            candidates.append(
-                {
-                    "turn_index": turn.turn_index,
-                    "issue": issue["issue"],
-                    "possibly_issues": [issue["issue"]],
-                    "why": issue["why"],
-                    "original_excerpt": _excerpt(turn.content),
-                    "suggested_prompt": suggested,
-                    "original_tokens": turn_tokens,
-                    "suggested_tokens": suggested_tokens,
-                    "estimated_token_delta": turn_tokens - suggested_tokens,
-                    "linked_dimension": issue.get("linked_dimension"),
-                    "overlap_ratio": issue.get("overlap_ratio"),
-                    "source": "rules",
-                }
-            )
-        prior_user = turn
-        prior_user_tokens = turn_tokens
-
-    return candidates
-
-
-def _similarity_redundancy_candidates(
-    user_turn_list: list[Turn],
-    edges: list[dict],
-) -> list[dict]:
-    """Flag turns in global redundancy clusters not already caught adjacently."""
-    candidates: list[dict] = []
-    turn_by_index = {t.turn_index: t for t in user_turn_list}
-
-    for edge in edges:
-        for turn_idx in (edge["turn_index_a"], edge["turn_index_b"]):
-            turn = turn_by_index.get(turn_idx)
-            if turn is None:
-                continue
-            other = (
-                edge["turn_index_b"]
-                if turn_idx == edge["turn_index_a"]
-                else edge["turn_index_a"]
-            )
-            candidates.append(
-                {
-                    "turn_index": turn_idx,
-                    "issue": "repeated_context",
-                    "possibly_issues": ["repeated_context"],
-                    "why": (
-                        f"Similar intent to turn {other} (combined similarity "
-                        f"{edge.get('combined', 0):.2f})."
-                    ),
-                    "original_excerpt": _excerpt(turn.content),
-                    "suggested_prompt": _suggest_reference_prior_turn(turn.content, other),
-                    "original_tokens": 0,
-                    "suggested_tokens": 0,
-                    "estimated_token_delta": 0,
-                    "linked_dimension": "redundancy_detection",
-                    "overlap_ratio": edge.get("combined"),
-                    "source": "similarity",
-                    "redundant_with_turns": [other],
-                }
-            )
-    return candidates
-
-
-def merge_suggestions(
-    rule_candidates: list[dict],
-    llm_suggestions: list[dict],
-    redundancy_edges: list[dict],
-    user_turn_list: list[Turn],
-) -> tuple[list[dict], list[str]]:
-    """
-    Merge rule, similarity, and LLM suggestions.
-    Returns (merged_turn_notes capped at 8, unique prompting_techniques).
-    """
-    llm_by_turn: dict[int, dict] = {row["turn_index"]: row for row in llm_suggestions}
-    merged: list[dict] = []
-    techniques: set[str] = set()
-
-    similarity_candidates = _similarity_redundancy_candidates(user_turn_list, redundancy_edges)
-
-    all_candidates = rule_candidates + similarity_candidates
-
-    seen_turn_issue: set[tuple[int, str]] = set()
-    for candidate in sorted(
-        all_candidates,
-        key=lambda row: (
-            ISSUE_PRIORITY.get(row.get("issue", ""), 99),
-            row.get("turn_index", 0),
-        ),
-    ):
-        turn_index = candidate["turn_index"]
-        issue = candidate.get("issue", "")
-        key = (turn_index, issue)
-        if key in seen_turn_issue:
-            continue
-
-        llm_row = llm_by_turn.get(turn_index)
-        final_issue = issue
-        why = candidate.get("why", "")
-        suggested = candidate.get("suggested_prompt", "")
-
-        if issue == "privacy_risk":
-            pass
-        elif llm_row:
-            high_conf = [
-                i for i in llm_row.get("issues", []) if float(i.get("confidence", 0)) >= 0.7
-            ]
-            if high_conf:
-                final_issue = high_conf[0].get("code", issue).replace("possibly_", "")
-                why = llm_row.get("why") or high_conf[0].get("summary", why)
-                suggested = llm_row.get("suggested_prompt") or suggested
-            for tech in llm_row.get("prompting_techniques", []):
-                if tech:
-                    techniques.add(str(tech))
-        elif issue in ("possibly_repeated_context", "repeated_context"):
-            final_issue = "repeated_context"
-
-        seen_turn_issue.add((turn_index, final_issue))
-        merged.append(
-            {
-                **candidate,
-                "issue": final_issue,
-                "why": why,
-                "suggested_prompt": suggested,
-            }
-        )
-
-    per_turn: dict[int, list[dict]] = {}
-    for row in merged:
-        per_turn.setdefault(row["turn_index"], []).append(row)
-
-    capped: list[dict] = []
-    for turn_index in sorted(per_turn):
-        items = per_turn[turn_index]
-        capped.append(items[0])
-        if len(items) > 1 and any(
-            float(llm_by_turn.get(turn_index, {}).get("prompt_quality_score", 0)) >= 80
-            for _ in [0]
-        ):
-            capped.append(items[1])
-    capped.sort(key=lambda row: (ISSUE_PRIORITY.get(row.get("issue", ""), 99), row["turn_index"]))
-    return capped[:8], sorted(techniques)
-
-
 def _dimension_score(dimensions: list[dict], dim_id: str, default: float = 70.0) -> float:
     for dim in dimensions:
         if dim.get("id") == dim_id:
@@ -751,58 +667,179 @@ def _dimension_score(dimensions: list[dict], dim_id: str, default: float = 70.0)
 
 def _compute_prompt_efficiency(
     *,
+    user_tokens: int,
+    user_turn_count: int,
+    user_evaluation: dict,
+    task_tier: str,
+    token_savings: dict,
+    cost_analysis: dict,
+    recommendations: list[dict],
+    turn_suggestions: list[dict],
+    user_turn_list: list[Turn],
+    turns: list[Turn],
+) -> dict:
+    prompt_quality = compute_prompt_quality(
+        user_turn_list,
+        turns,
+        task_tier,
+        turn_suggestions=turn_suggestions,
+    )
+    efficiency = compute_efficiency_grade(
+        prompt_quality_score=prompt_quality["score"],
+        user_tokens=user_tokens,
+        task_tier=task_tier,
+        user_turn_count=user_turn_count,
+        token_savings=token_savings,
+        user_reported_model=cost_analysis.get("user_reported_model"),
+        detected_model=cost_analysis.get("detected_model"),
+        tier_recommended_model=cost_analysis.get("tier_recommended_model"),
+        recommendations=recommendations,
+    )
+    efficiency["ai_usage_score"] = float(user_evaluation.get("overall_score", 0))
+    efficiency["prompt_quality_pillars"] = prompt_quality["pillars"]
+    return efficiency
+
+
+def _build_waste_buckets(
+    turn_suggestions: list[dict],
+    *,
     total_tokens: int,
     turn_count: int,
     user_evaluation: dict,
-    task_complexity_score: float,
+    model_advice: dict,
     token_savings: dict,
-) -> dict:
+) -> list[dict]:
+    buckets: dict[str, dict] = {
+        "structural": {"issues": [], "estimated_tokens": 0},
+        "instruction": {"issues": [], "estimated_tokens": 0},
+        "conversation": {"issues": [], "estimated_tokens": 0},
+        "model": {"issues": [], "estimated_tokens": 0},
+    }
+
+    for suggestion in turn_suggestions:
+        issue = suggestion.get("issue", "")
+        delta = max(0, suggestion.get("estimated_token_delta", 0))
+        for bucket_id, issue_set in WASTE_BUCKET_ISSUES.items():
+            if issue in issue_set:
+                buckets[bucket_id]["issues"].append(issue)
+                buckets[bucket_id]["estimated_tokens"] += delta
+
+    duplicate = token_savings.get("duplicate_context_savings_tokens", 0)
+    if duplicate > 0:
+        buckets["structural"]["estimated_tokens"] += duplicate
+        buckets["structural"]["issues"].append("duplicate_context")
+
     quality = float(user_evaluation.get("overall_score", 50))
-    dimensions = user_evaluation.get("dimensions", [])
-    prompting = _dimension_score(dimensions, "context_management")
-    context = _dimension_score(dimensions, "redundancy_detection", default=70.0)
-
-    expected_tokens = 400 + (task_complexity_score / 100) * 4600
-    excess = max(0, total_tokens - expected_tokens)
-    excess_penalty = min(30.0, (excess / max(expected_tokens, 1)) * 18)
-
-    turns_penalty = 0.0
-    user_turn_count = max(1, turn_count // 2)
-    if user_turn_count >= 8 and quality < 70:
-        turns_penalty = min(12.0, (user_turn_count - 6) * 2)
-
-    skill_gap = max(0.0, 72 - min(prompting, context)) * 0.25
-    efficiency = max(0.0, min(100.0, quality - excess_penalty - turns_penalty - skill_gap))
-
-    if efficiency >= 75:
-        grade = "Efficient"
-    elif efficiency >= 55:
-        grade = "Moderate"
-    else:
-        grade = "Inefficient"
-
-    high_tokens_poor_quality = total_tokens >= 2500 and quality < 65
-    verdict_parts = [f"{quality:.0f}% prompting quality on {total_tokens:,} tokens"]
-    if high_tokens_poor_quality or efficiency < 55:
-        verdict_parts.append(f"{grade.lower()} token use for this session")
-    else:
-        verdict_parts.append(f"{grade.lower()} session overall")
-
-    if token_savings.get("savings_tokens", 0) > 0:
-        verdict_parts.append(
-            f"~{token_savings['savings_tokens']} tokens recoverable with suggested edits"
+    if turn_count >= 10 and quality < 68 and not buckets["conversation"]["issues"]:
+        buckets["conversation"]["issues"].append("long_thread_low_quality")
+        buckets["conversation"]["estimated_tokens"] += min(
+            200, round(total_tokens * 0.05)
         )
 
+    ref = model_advice.get("reference_model")
+    tier_model = model_advice.get("tier_recommended_model")
+    cost_fit = model_advice.get("cost_fit_recommended_model")
+    if ref and tier_model and ref != tier_model:
+        buckets["model"]["issues"].append("reference_over_tier")
+    if ref and cost_fit and ref != cost_fit:
+        buckets["model"]["issues"].append("reference_over_cost_fit")
+
+    result: list[dict] = []
+    labels = {
+        "structural": "Structural waste",
+        "instruction": "Instruction waste",
+        "conversation": "Conversation waste",
+        "model": "Model waste",
+    }
+    for bucket_id in ("structural", "instruction", "conversation", "model"):
+        data = buckets[bucket_id]
+        if not data["issues"]:
+            continue
+        unique_issues = sorted(set(data["issues"]))
+        result.append(
+            {
+                "id": bucket_id,
+                "label": labels[bucket_id],
+                "causes": [issue.replace("_", " ") for issue in unique_issues],
+                "fix": WASTE_BUCKET_FIXES[bucket_id],
+                "estimated_tokens": data["estimated_tokens"],
+            }
+        )
+
+    result.sort(key=lambda row: row["estimated_tokens"], reverse=True)
+    return result
+
+
+def _best_suggestion_per_turn(turn_suggestions: list[dict]) -> dict[int, dict]:
+    """Pick one suggestion per turn — prefer highest token savings."""
+    by_turn: dict[int, dict] = {}
+    compress_issues = {"repeated_context", "verbose_prompt", "context_dump"}
+
+    for suggestion in turn_suggestions:
+        turn_index = suggestion["turn_index"]
+        current = by_turn.get(turn_index)
+        delta = suggestion.get("estimated_token_delta", 0)
+        if current is None:
+            by_turn[turn_index] = suggestion
+            continue
+        current_delta = current.get("estimated_token_delta", 0)
+        if delta > current_delta:
+            by_turn[turn_index] = suggestion
+        elif delta == current_delta and suggestion.get("issue") in compress_issues:
+            by_turn[turn_index] = suggestion
+
+    return by_turn
+
+
+def _build_optimized_session(
+    turns: list[Turn],
+    tokens_by_turn: list[int],
+    turn_suggestions: list[dict],
+    encoding_name: str,
+) -> dict:
+    """Simulate a session with best per-turn user prompt replacements."""
+    current_total = sum(tokens_by_turn)
+    best_by_turn = _best_suggestion_per_turn(turn_suggestions)
+    compress_issues = {"repeated_context", "verbose_prompt", "context_dump"}
+
+    optimized_contents: list[str] = []
+    turns_optimized = 0
+    for turn, turn_tokens in zip(turns, tokens_by_turn):
+        if turn.role != "user":
+            optimized_contents.append(turn.content)
+            continue
+
+        suggestion = best_by_turn.get(turn.turn_index)
+        if not suggestion:
+            optimized_contents.append(turn.content)
+            continue
+
+        delta = suggestion.get("estimated_token_delta", 0)
+        issue = suggestion.get("issue", "")
+        if delta > 0 or issue in compress_issues:
+            optimized_contents.append(suggestion["suggested_prompt"])
+            turns_optimized += 1
+        else:
+            optimized_contents.append(turn.content)
+
+    optimized_total = sum(
+        _count_tokens(content, encoding_name) for content in optimized_contents
+    )
+    savings_tokens = max(0, current_total - optimized_total)
+    savings_percent = (
+        round((savings_tokens / current_total) * 100, 1) if current_total else 0.0
+    )
+
     return {
-        "efficiency_score": round(efficiency, 1),
-        "grade": grade,
-        "prompting_quality_score": round(quality, 1),
-        "expected_tokens_for_complexity": round(expected_tokens),
-        "excess_tokens_vs_expected": round(excess),
-        "verdict": " — ".join(verdict_parts) + ".",
+        "current_total": current_total,
+        "optimized_total": optimized_total,
+        "savings_tokens": savings_tokens,
+        "savings_percent": savings_percent,
+        "turns_optimized": turns_optimized,
+        "encoding": encoding_name,
         "methodology": (
-            "Combines AI usage quality score with penalties for excess tokens vs task "
-            "complexity, weak prompting/context skills, and long low-quality threads."
+            "Rebuilds the session applying the best per-turn user prompt suggestion "
+            "(token-reducing or compression fixes), then re-counts all turns with tiktoken."
         ),
     }
 
@@ -939,27 +976,39 @@ def build_prompting_recommendations(
     *,
     tokens_by_turn: list[int],
     total_tokens: int,
+    user_tokens: int | None = None,
     max_turn_tokens: int,
     encoding_name: str,
     user_evaluation: dict,
     cost_analysis: dict,
     recommendations: list[dict],
+    task_profile: dict | None = None,
     use_llm: bool = False,
-    embedding_model: str = "openai/text-embedding-3-small",
     llm_coach_model: str = "openai/gpt-4o-mini",
+    embedding_model: str = "openai/text-embedding-3-small",
 ) -> dict:
+    _ = use_llm, llm_coach_model, embedding_model
     user_turn_list = _user_turns(turns)
+    if user_tokens is None:
+        user_tokens = sum(
+            count for turn, count in zip(turns, tokens_by_turn) if turn.role == "user"
+        )
     user_token_counts = [
         count for turn, count in zip(turns, tokens_by_turn) if turn.role == "user"
     ]
     median_user_tokens = float(median(user_token_counts)) if user_token_counts else 0.0
 
-    task_tier, task_score, task_rationale = _classify_task_complexity(
-        turns,
-        user_turn_list,
-        total_tokens,
-        max_turn_tokens,
-    )
+    if task_profile:
+        task_tier = task_profile["complexity_tier"]
+        task_score = task_profile["complexity_score"]
+        task_rationale = task_profile["complexity_rationale"]
+    else:
+        task_tier, task_score, task_rationale = classify_task_complexity(
+            turns,
+            user_turn_list,
+            total_tokens,
+            max_turn_tokens,
+        )
     model_advice = _build_model_advice(
         task_tier,
         task_score,
@@ -968,51 +1017,92 @@ def build_prompting_recommendations(
         cost_analysis,
     )
 
-    rule_candidates = _collect_rule_candidates(
-        turns,
-        tokens_by_turn,
-        encoding_name=encoding_name,
-        median_user_tokens=median_user_tokens,
-    )
+    raw_suggestions: list[dict] = []
+    prior_user: Turn | None = None
+    prior_user_tokens = 0
 
-    embed_cache: dict[str, list[float]] = {}
-    redundancy_edges = redundancy_matrix(
-        user_turn_list,
-        embed_cache=embed_cache,
-        use_embeddings=use_llm,
-        embedding_model=embedding_model,
-    )
-    redundancy_clusters = cluster_redundant_turns(redundancy_edges)
+    for turn, turn_tokens in zip(turns, tokens_by_turn):
+        if turn.role != "user":
+            continue
 
-    task_type, task_type_confidence, task_type_rationale = _classify_task_type(
-        user_turn_list
-    )
+        for issue in _detect_turn_issues(
+            turn,
+            turn_tokens,
+            encoding_name=encoding_name,
+            median_user_tokens=median_user_tokens,
+            prior_user_turn=prior_user,
+            prior_user_tokens=prior_user_tokens,
+        ):
+            suggested = issue["suggested_prompt"]
+            suggested_tokens = _count_tokens(suggested, encoding_name)
+            raw_suggestions.append(
+                {
+                    "turn_index": turn.turn_index,
+                    "issue": issue["issue"],
+                    "why": issue["why"],
+                    "original_excerpt": _excerpt(turn.content),
+                    "suggested_prompt": suggested,
+                    "original_tokens": turn_tokens,
+                    "suggested_tokens": suggested_tokens,
+                    "estimated_token_delta": turn_tokens - suggested_tokens,
+                    "linked_dimension": issue.get("linked_dimension"),
+                    "overlap_ratio": issue.get("overlap_ratio"),
+                }
+            )
 
-    llm_suggestions: list[dict] = []
-    if use_llm and rule_candidates:
-        llm_suggestions = enrich_turn_suggestions(
-            turns,
-            rule_candidates,
-            redundancy_clusters,
-            task_type=task_type,
-            task_tier=task_tier,
-            model=llm_coach_model,
+        prior_user = turn
+        prior_user_tokens = turn_tokens
+
+    # Keep the highest-savings suggestion per turn+issue type.
+    seen: set[tuple[int, str]] = set()
+    turn_suggestions: list[dict] = []
+    for item in sorted(
+        raw_suggestions,
+        key=lambda row: (
+            ISSUE_PRIORITY.get(row["issue"], 99),
+            -row.get("estimated_token_delta", 0),
+        ),
+    ):
+        key = (item["turn_index"], item["issue"])
+        if key in seen:
+            continue
+        seen.add(key)
+        turn_suggestions.append(item)
+
+    turn_suggestions.sort(
+        key=lambda row: (
+            ISSUE_PRIORITY.get(row["issue"], 99),
+            row["turn_index"],
         )
-
-    merged_notes, prompting_techniques = merge_suggestions(
-        rule_candidates,
-        llm_suggestions,
-        redundancy_edges,
-        user_turn_list,
     )
+    turn_suggestions = turn_suggestions[:8]
 
     token_savings = _build_token_savings_estimate(
         turns,
         tokens_by_turn,
-        merged_notes,
+        turn_suggestions,
         encoding_name,
     )
+    optimized_session = _build_optimized_session(
+        turns,
+        tokens_by_turn,
+        turn_suggestions,
+        encoding_name,
+    )
+    if optimized_session["savings_tokens"] > token_savings.get("savings_tokens", 0):
+        token_savings = {
+            **token_savings,
+            "optimized_total": optimized_session["optimized_total"],
+            "savings_tokens": optimized_session["savings_tokens"],
+            "savings_percent": optimized_session["savings_percent"],
+            "session_simulation": optimized_session,
+        }
+    else:
+        token_savings = {**token_savings, "session_simulation": optimized_session}
 
+    task_type, task_type_confidence, task_type_rationale = _classify_task_type(
+        user_turn_list
+    )
     tiered_models = _build_tiered_model_picks(
         task_type=task_type,
         task_tier=task_tier,
@@ -1027,13 +1117,27 @@ def build_prompting_recommendations(
 
     dimensions = user_evaluation.get("dimensions", [])
     prompt_efficiency = _compute_prompt_efficiency(
+        user_tokens=user_tokens,
+        user_turn_count=len(user_turn_list),
+        user_evaluation=user_evaluation,
+        task_tier=task_tier,
+        token_savings=token_savings,
+        cost_analysis=cost_analysis,
+        recommendations=recommendations,
+        turn_suggestions=turn_suggestions,
+        user_turn_list=user_turn_list,
+        turns=turns,
+    )
+    waste_buckets = _build_waste_buckets(
+        turn_suggestions,
         total_tokens=total_tokens,
         turn_count=len(turns),
         user_evaluation=user_evaluation,
-        task_complexity_score=task_score,
+        model_advice=model_advice,
         token_savings=token_savings,
     )
 
+    playbook_tips = _playbook_from_dimensions(dimensions)
     weakest = min(dimensions, key=lambda d: d.get("score", 100), default=None)
 
     parts: list[str] = [prompt_efficiency["verdict"].rstrip(".")]
@@ -1041,36 +1145,50 @@ def build_prompting_recommendations(
         parts.append(
             f"task type '{TASK_TYPE_LABELS.get(task_type, task_type)}' detected"
         )
-    if redundancy_clusters:
-        parts.append(f"{len(redundancy_clusters)} redundant prompt cluster(s) found")
-    elif merged_notes:
-        parts.append(f"{len(merged_notes)} coaching note(s) identified")
+    if optimized_session["savings_tokens"] > 0:
+        parts.append(
+            f"optimized session could save {optimized_session['savings_tokens']} tokens "
+            f"({optimized_session['savings_percent']}%)"
+        )
+    elif turn_suggestions:
+        parts.append(f"{len(turn_suggestions)} prompt improvement(s) identified")
 
     summary = "This session: " + "; ".join(parts) + "."
-
-    methodology = (
-        "Hybrid prompting coach: rules → all-pairs similarity → "
-        + ("LLM enrichment when enabled. " if use_llm else "rules/similarity only (LLM off). ")
-        + "Token deltas use tiktoken, not an LLM."
-    )
 
     return {
         "summary": summary,
         "focus_dimension": weakest["label"] if weakest else None,
         "focus_dimension_score": weakest["score"] if weakest else None,
         "prompt_efficiency": prompt_efficiency,
+        "session_profile": {
+            "prompt_quality": {
+                "score": prompt_efficiency.get("prompting_quality_score"),
+                "pillars": prompt_efficiency.get("prompt_quality_pillars"),
+            },
+            "efficiency": {
+                "score": prompt_efficiency.get("efficiency_score"),
+                "grade": prompt_efficiency.get("grade"),
+                "breakdown": prompt_efficiency.get("breakdown"),
+                "factors": prompt_efficiency.get("efficiency_factors"),
+            },
+            "ai_usage_score": prompt_efficiency.get("ai_usage_score"),
+        },
         "task_type": {
             "id": task_type,
             "label": TASK_TYPE_LABELS.get(task_type, task_type.title()),
             "confidence": task_type_confidence,
             "rationale": task_type_rationale,
         },
+        "waste_buckets": waste_buckets,
+        "optimized_session": optimized_session,
         "tiered_model_picks": tiered_models,
         "token_savings_estimate": token_savings,
         "model_advice": model_advice,
-        "redundancy_clusters": redundancy_clusters,
-        "redundancy_edges": redundancy_edges,
-        "prompting_techniques": prompting_techniques,
-        "coaching_notes": merged_notes,
-        "methodology": methodology,
+        "turn_suggestions": turn_suggestions,
+        "playbook_tips": playbook_tips,
+        "methodology": (
+            "Rule-based prompting coach (no LLM). Includes prompt efficiency scoring, "
+            "waste-bucket diagnosis, optimized session simulation, task-type classification, "
+            "and economy/recommended/premium model picks."
+        ),
     }

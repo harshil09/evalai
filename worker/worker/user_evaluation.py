@@ -411,8 +411,7 @@ def _written_summary(dimensions: list[dict], overall: float) -> str:
     return (
         f"This session scores {overall}% overall for AI tool usage. "
         f"The strongest skill area is {strongest['label'].lower()} ({strongest['score']}%). "
-        f"The main growth area is {weakest['label'].lower()} ({weakest['score']}%). "
-        "Scores are derived from transcript patterns and do not use an LLM judge."
+        f"The main growth area is {weakest['label'].lower()} ({weakest['score']}%)."
     )
 
 

@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 KNOWN_KEYS = frozenset(
     {
         "default_reference_model",
+        "reference_strategy",
         "reserved_output_tokens",
         "model_catalog_cache_seconds",
         "enable_llm_coach",
@@ -47,6 +48,8 @@ def _env_defaults() -> dict:
     return {
         "default_reference_model": os.getenv("DEFAULT_REFERENCE_MODEL", "gpt-4o").strip()
         or "gpt-4o",
+        "reference_strategy": os.getenv("REFERENCE_STRATEGY", "task_tier").strip()
+        or "task_tier",
         "reserved_output_tokens": settings["reserved_output_tokens"],
         "model_catalog_cache_seconds": int(settings["model_catalog_cache_seconds"]),
         "enable_llm_coach": enable_llm,
@@ -69,6 +72,10 @@ def _parse_settings(rows: list[dict]) -> dict:
         try:
             if key == "default_reference_model":
                 merged[key] = str(raw).strip() or merged[key]
+            elif key == "reference_strategy":
+                strategy = str(raw).strip().lower()
+                if strategy in ("task_tier", "legacy"):
+                    merged[key] = strategy
             elif key == "reserved_output_tokens":
                 merged[key] = max(0, int(raw))
             elif key == "model_catalog_cache_seconds":

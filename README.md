@@ -423,6 +423,14 @@ After deploying a new worker build, run `migration_worker_format_version.sql` if
 
 ---
 
+## Authors
+
+**Harshil Soni** ([@harshil09](https://github.com/harshil09)) — [harshilsoni757@gmail.com](mailto:harshilsoni757@gmail.com)
+
+**Nirali Soni** ([@Nirali06](https://github.com/Nirali06)) — [niralisoni0606@gmail.com](mailto:niralisoni0606@gmail.com)
+
+---
+
 ## License
 
 Private / project use — add a license if you open-source this repo.

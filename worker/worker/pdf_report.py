@@ -145,7 +145,9 @@ def _append_prompting_recommendations(story: list, summary: dict, body_style, he
     )
 
     story.append(Paragraph("Prompting recommendations", heading_style))
-    if coaching.get("summary"):
+
+    efficiency = coaching.get("prompt_efficiency") or {}
+    if not efficiency and coaching.get("summary"):
         story.append(Paragraph(_escape_pdf_text(coaching["summary"]), body_style))
 
     focus = coaching.get("focus_dimension")
@@ -158,28 +160,16 @@ def _append_prompting_recommendations(story: list, summary: dict, body_style, he
             )
         )
 
-    efficiency = coaching.get("prompt_efficiency") or {}
     if efficiency:
-        story.append(Paragraph("Prompt efficiency", subheading_style))
         eff_rows = [
             ["Metric", "Value"],
             ["Efficiency score", f"{efficiency.get('efficiency_score', 0)}%"],
             ["Grade", efficiency.get("grade", "—")],
-            ["Prompting quality", f"{efficiency.get('prompting_quality_score', 0)}%"],
-            [
-                "Expected tokens (complexity)",
-                str(efficiency.get("expected_tokens_for_complexity", "—")),
-            ],
-            [
-                "Excess tokens vs expected",
-                str(efficiency.get("excess_tokens_vs_expected", 0)),
-            ],
+            ["Prompt quality", f"{efficiency.get('prompting_quality_score', 0)}%"],
         ]
         eff_table = _para_table(eff_rows, [2.5 * inch, 3.5 * inch], cell_style)
+        story.append(Spacer(1, 0.08 * inch))
         story.append(KeepTogether([eff_table]))
-        if efficiency.get("verdict"):
-            story.append(Spacer(1, 0.06 * inch))
-            story.append(Paragraph(_escape_pdf_text(efficiency["verdict"]), body_style))
 
     clusters = coaching.get("redundancy_clusters") or []
     techniques = coaching.get("prompting_techniques") or []

@@ -124,6 +124,7 @@ def process_evaluation(client: Client, job: dict) -> None:
         reserved_output_tokens=app_settings["reserved_output_tokens"],
         default_reference_model=app_settings["default_reference_model"],
         user_reported_model=user_reported_model,
+        reference_strategy=app_settings.get("reference_strategy", "task_tier"),
         use_llm=bool(app_settings.get("enable_llm_coach")),
         llm_coach_model=app_settings.get("llm_coach_model", "openai/gpt-4o-mini"),
         embedding_model=app_settings.get(
