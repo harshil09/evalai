@@ -2,7 +2,7 @@
 
 Upload chat transcripts between a **user** and an **agent**, get deterministic **token analysis** (no LLM required), and download a **PDF report** with statistics, charts, and prompting insights.
 
-Built with **Next.js**, **Supabase**, and a **Python background worker**.
+Built with **Next.js** and **Supabase**. Background jobs are handled by a **Python worker**, typically run as a pool with **Docker Compose**.
 
 ---
 
