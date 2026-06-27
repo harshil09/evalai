@@ -126,6 +126,6 @@ export function getInitials(
 }
 
 export const GLASS_CARD =
-  "dashboard-glass-card relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.06] shadow-2xl shadow-black/30 backdrop-blur-2xl";
+  "rounded-xl border border-border bg-card text-card-foreground shadow-sm transition-shadow hover:shadow-md";
 
-export const GLASS_CARD_INNER = "relative p-6 sm:p-7";
+export const GLASS_CARD_INNER = "p-6 sm:p-7";

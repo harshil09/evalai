@@ -2,6 +2,15 @@
 
 import Link from "next/link";
 import EvalAILogo from "@/components/auth/EvalAILogo";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 type AuthMode = "signin" | "signup";
 
@@ -21,16 +30,10 @@ function AuthModeTabs({ mode }: { mode: AuthMode }) {
 
   return (
     <div
-      className="relative mb-8 grid grid-cols-2 rounded-xl bg-white/[0.04] p-1 ring-1 ring-white/10"
+      className="grid w-full grid-cols-2 rounded-lg bg-muted p-1"
       role="tablist"
       aria-label="Authentication mode"
     >
-      <div
-        className={`pointer-events-none absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 shadow-lg shadow-violet-900/40 transition-all duration-300 ease-out ${
-          mode === "signup" ? "left-[calc(50%+2px)]" : "left-1"
-        }`}
-        aria-hidden="true"
-      />
       {tabs.map((tab) => {
         const isActive = tab.id === mode;
 
@@ -40,9 +43,12 @@ function AuthModeTabs({ mode }: { mode: AuthMode }) {
             href={tab.href}
             role="tab"
             aria-selected={isActive}
-            className={`relative z-10 rounded-lg px-4 py-2.5 text-center text-sm font-medium transition-colors duration-200 ${
-              isActive ? "text-white" : "text-zinc-400 hover:text-zinc-200"
-            }`}
+            className={cn(
+              "rounded-md px-4 py-2 text-center text-sm font-medium transition-all duration-200",
+              isActive
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
           >
             {tab.label}
           </Link>
@@ -60,43 +66,29 @@ export default function AuthShell({
   footer,
 }: AuthShellProps) {
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#0a0a14] px-4 py-12">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
       <div
-        className="pointer-events-none absolute -left-32 top-1/4 h-96 w-96 animate-auth-orb rounded-full bg-indigo-600/25 blur-[100px]"
-        aria-hidden="true"
-      />
-      <div
-        className="pointer-events-none absolute -right-32 bottom-1/4 h-96 w-96 animate-auth-orb-delayed rounded-full bg-violet-600/20 blur-[100px]"
-        aria-hidden="true"
-      />
-      <div
-        className="pointer-events-none absolute left-1/2 top-0 h-64 w-64 -translate-x-1/2 rounded-full bg-purple-500/10 blur-[80px]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--accent)_0%,_transparent_50%)] opacity-60"
         aria-hidden="true"
       />
 
       <div className="relative w-full max-w-md animate-auth-fade-up">
-        <div className="auth-glass-card relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.06] p-8 shadow-2xl shadow-black/40 backdrop-blur-2xl sm:p-10">
-          <div className="auth-shimmer-sweep pointer-events-none absolute inset-0" aria-hidden="true" />
-
-          <div className="relative">
-            <div className="mb-6 flex justify-center">
-              <EvalAILogo variant="dark" size="md" />
-            </div>
-
+        <Card className="shadow-lg ring-1 ring-border/80">
+          <CardHeader className="gap-5">
+            <EvalAILogo size="sm" />
             <AuthModeTabs mode={mode} />
-
-            <div className="mb-8 text-center">
-              <h1 className="text-2xl font-bold tracking-tight text-white sm:text-[1.65rem]">
-                {title}
-              </h1>
-              <p className="mt-2 text-sm leading-relaxed text-zinc-400">{subtitle}</p>
+            <div className="space-y-1.5">
+              <CardTitle className="text-xl font-semibold tracking-tight">{title}</CardTitle>
+              <CardDescription className="text-sm leading-relaxed">{subtitle}</CardDescription>
             </div>
+          </CardHeader>
 
-            {children}
+          <CardContent>{children}</CardContent>
 
-            <p className="mt-8 text-center text-sm text-zinc-500">{footer}</p>
-          </div>
-        </div>
+          <CardFooter className="justify-center border-0 bg-transparent pt-0 text-sm text-muted-foreground">
+            {footer}
+          </CardFooter>
+        </Card>
       </div>
     </div>
   );

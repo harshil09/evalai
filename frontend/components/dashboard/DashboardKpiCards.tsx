@@ -9,6 +9,8 @@ import {
   type DashboardKpiStats,
   type EvaluationRow,
 } from "@/components/dashboard/dashboard-utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 type DashboardKpiCardsProps = {
   refreshKey: number;
@@ -21,31 +23,36 @@ type KpiTile = {
   accent?: "violet" | "cyan" | "emerald" | "indigo";
 };
 
-const ACCENT_RING: Record<NonNullable<KpiTile["accent"]>, string> = {
-  violet: "from-violet-500/20 to-transparent",
-  cyan: "from-cyan-500/20 to-transparent",
-  emerald: "from-emerald-500/20 to-transparent",
-  indigo: "from-indigo-500/20 to-transparent",
+const ACCENT_BG: Record<NonNullable<KpiTile["accent"]>, string> = {
+  violet: "from-violet-500/10 to-transparent",
+  cyan: "from-cyan-500/10 to-transparent",
+  emerald: "from-emerald-500/10 to-transparent",
+  indigo: "from-indigo-500/10 to-transparent",
 };
 
 function KpiCard({ label, value, hint, accent = "violet" }: KpiTile) {
   return (
     <div
-      className={`${GLASS_CARD} dashboard-kpi-tile group overflow-hidden p-4 sm:p-5`}
+      className={cn(
+        GLASS_CARD,
+        "dashboard-kpi-tile group relative overflow-hidden p-4 sm:p-5",
+      )}
     >
       <div
-        className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${ACCENT_RING[accent]} opacity-80`}
+        className={cn(
+          "pointer-events-none absolute inset-0 bg-gradient-to-br opacity-80",
+          ACCENT_BG[accent],
+        )}
         aria-hidden="true"
       />
-      <div className="dashboard-shimmer pointer-events-none absolute inset-0" aria-hidden="true" />
       <div className="relative">
-        <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
           {label}
         </p>
-        <p className="mt-2 text-2xl font-bold tracking-tight text-white transition group-hover:scale-[1.02]">
+        <p className="mt-2 text-2xl font-bold tracking-tight transition-transform group-hover:scale-[1.02]">
           {value}
         </p>
-        {hint && <p className="mt-1 text-xs text-zinc-500">{hint}</p>}
+        {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
       </div>
     </div>
   );
@@ -118,10 +125,7 @@ export default function DashboardKpiCards({ refreshKey }: DashboardKpiCardsProps
     return (
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
-          <div
-            key={index}
-            className={`${GLASS_CARD} h-24 animate-pulse bg-white/[0.04]`}
-          />
+          <Skeleton key={index} className="h-24 rounded-xl" />
         ))}
       </div>
     );

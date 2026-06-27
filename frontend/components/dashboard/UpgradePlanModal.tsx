@@ -1,6 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 type UpgradePlanModalProps = {
   open: boolean;
@@ -15,78 +24,59 @@ export default function UpgradePlanModal({
 }: UpgradePlanModalProps) {
   const router = useRouter();
 
-  if (!open) return null;
-
   function handleUpgradeToPro() {
     router.push("/checkout");
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="upgrade-modal-title"
-      onClick={onClose}
-    >
-      <div
-        className="dashboard-glass-card w-full max-w-lg rounded-2xl border border-white/10 bg-[#12121f]/95 p-6 shadow-2xl backdrop-blur-xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <h2 id="upgrade-modal-title" className="text-xl font-semibold text-white">
-          Choose your plan
-        </h2>
-        <p className="mt-2 text-sm text-zinc-400">
-          You&apos;ve used {uploadsUsed} of 5 free uploads this month. Upgrade to Pro for
-          unlimited transcript analysis.
-        </p>
+    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
+      <DialogContent className="max-w-lg sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Choose your plan</DialogTitle>
+          <DialogDescription>
+            You&apos;ve used {uploadsUsed} of 5 free uploads this month. Upgrade to Pro for
+            unlimited transcript analysis.
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <p className="text-sm font-semibold text-white">Free</p>
-            <p className="mt-1 text-2xl font-bold text-white">$0</p>
-            <p className="text-xs text-zinc-500">per month</p>
-            <ul className="mt-4 space-y-2 text-xs text-zinc-400">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="rounded-xl border border-border bg-card p-4 transition-shadow hover:shadow-sm">
+            <p className="text-sm font-semibold">Free</p>
+            <p className="mt-1 text-2xl font-bold">$0</p>
+            <p className="text-xs text-muted-foreground">per month</p>
+            <ul className="mt-4 space-y-2 text-xs text-muted-foreground">
               <li>5 uploads per month</li>
               <li>PDF analysis reports</li>
               <li>12 skill dimensions</li>
             </ul>
-            <button
-              type="button"
-              onClick={onClose}
-              className="mt-4 w-full rounded-xl border border-white/15 px-3 py-2.5 text-sm font-medium text-zinc-200 hover:bg-white/[0.05]"
-            >
+            <Button type="button" variant="outline" onClick={onClose} className="mt-4 w-full">
               Stay on Free
-            </button>
+            </Button>
           </div>
 
-          <div className="rounded-xl border-2 border-violet-500/50 bg-violet-500/10 p-4">
-            <p className="text-sm font-semibold text-violet-300">Pro</p>
-            <p className="mt-1 text-2xl font-bold text-white">$9</p>
-            <p className="text-xs text-zinc-500">per month</p>
-            <ul className="mt-4 space-y-2 text-xs text-zinc-400">
+          <div
+            className={cn(
+              "rounded-xl border-2 border-primary/40 bg-accent/50 p-4 transition-shadow hover:shadow-md",
+            )}
+          >
+            <p className="text-sm font-semibold text-primary">Pro</p>
+            <p className="mt-1 text-2xl font-bold">$9</p>
+            <p className="text-xs text-muted-foreground">per month</p>
+            <ul className="mt-4 space-y-2 text-xs text-muted-foreground">
               <li>Unlimited uploads</li>
               <li>PDF analysis reports</li>
               <li>Priority processing</li>
             </ul>
-            <button
-              type="button"
-              onClick={handleUpgradeToPro}
-              className="auth-gradient-btn mt-4 w-full rounded-xl px-3 py-2.5 text-sm font-semibold text-white"
-            >
+            <Button type="button" onClick={handleUpgradeToPro} className="mt-4 w-full">
               Upgrade to Pro
-            </button>
+            </Button>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-4 w-full text-center text-sm text-zinc-500 hover:text-zinc-300"
-        >
+        <Button type="button" variant="ghost" onClick={onClose} className="w-full text-muted-foreground">
           Maybe later
-        </button>
-      </div>
-    </div>
+        </Button>
+      </DialogContent>
+    </Dialog>
   );
 }

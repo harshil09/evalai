@@ -119,9 +119,9 @@ export default function SignInPage() {
     <AuthShell
       mode="signin"
       title="Welcome back"
-      subtitle="Sign in to your EvalAI workspace."
+      subtitle="Sign in to your account"
       footer={
-        <AuthFooterLink prompt="No account?" href="/signup" linkText="Create one free" />
+        <AuthFooterLink prompt="Don't have an account?" href="/signup" linkText="Sign up" />
       }
     >
       <form onSubmit={handleSignIn} className="space-y-5">
@@ -133,6 +133,7 @@ export default function SignInPage() {
           onChange={setEmail}
           autoComplete="email"
           validateEmail
+          placeholder="you@example.com"
         />
         <PasswordField
           id="password"

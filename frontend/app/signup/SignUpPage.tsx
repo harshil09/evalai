@@ -97,8 +97,8 @@ export default function SignUpPage() {
   return (
     <AuthShell
       mode="signup"
-      title="Create your account"
-      subtitle="Upload AI transcripts and receive structured efficiency reports."
+      title="Create an account"
+      subtitle="Get started with EvalAI"
       footer={
         <AuthFooterLink prompt="Already have an account?" href="/signin" linkText="Sign in" />
       }
@@ -111,6 +111,7 @@ export default function SignUpPage() {
             value={firstName}
             onChange={setFirstName}
             autoComplete="given-name"
+            placeholder="Jane"
           />
           <AuthField
             id="lastName"
@@ -118,6 +119,7 @@ export default function SignUpPage() {
             value={lastName}
             onChange={setLastName}
             autoComplete="family-name"
+            placeholder="Doe"
           />
         </div>
         <AuthField
@@ -128,6 +130,7 @@ export default function SignUpPage() {
           onChange={setEmail}
           autoComplete="email"
           validateEmail
+          placeholder="you@example.com"
         />
         <PasswordField
           id="password"

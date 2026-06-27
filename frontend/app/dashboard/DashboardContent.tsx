@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { LogOut } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import EvalAILogo from "@/components/auth/EvalAILogo";
@@ -12,6 +13,9 @@ import DocumentSearch from "@/components/dashboard/DocumentSearch";
 import EvaluationHistory from "@/components/dashboard/EvaluationHistory";
 import UploadTranscript from "@/components/dashboard/UploadTranscript";
 import { GLASS_CARD, GLASS_CARD_INNER } from "@/components/dashboard/dashboard-utils";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type Profile = {
   id: string;
@@ -106,55 +110,51 @@ export default function DashboardContent() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0a0a14] text-sm text-zinc-400">
-        Loading dashboard...
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
+        <Skeleton className="h-8 w-32" />
+        <Skeleton className="h-4 w-48" />
       </div>
     );
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#0a0a14] px-4 py-8 sm:py-10">
+    <div className="relative min-h-screen bg-background px-4 py-8 sm:py-10">
       <div
-        className="pointer-events-none absolute -left-32 top-1/4 h-96 w-96 animate-auth-orb rounded-full bg-indigo-600/20 blur-[100px]"
-        aria-hidden="true"
-      />
-      <div
-        className="pointer-events-none absolute -right-32 bottom-1/4 h-96 w-96 animate-auth-orb-delayed rounded-full bg-violet-600/15 blur-[100px]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--accent)_0%,_transparent_55%)] opacity-50"
         aria-hidden="true"
       />
 
       <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <EvalAILogo size="sm" variant="dark" interactive />
+          <EvalAILogo size="sm" />
           <div className="flex flex-1 flex-col gap-3 sm:mx-6 sm:max-w-md">
             <DashboardTabs activeTab={activeTab} onChange={setActiveTab} />
           </div>
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={handleSignOut}
-            className="inline-flex items-center justify-center gap-2 self-start rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white sm:self-center"
+            className="self-start sm:self-center"
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12H3m0 0 4-4m-4 4 4 4m10-4h2a2 2 0 012 2v6a2 2 0 01-2 2h-2" />
-            </svg>
+            <LogOut className="size-4" />
             Sign out
-          </button>
+          </Button>
         </header>
 
         {error && (
-          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-            {error}
-          </p>
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
 
         {successMessage && (
-          <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-            {successMessage}
-          </p>
+          <Alert className="border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+            <AlertDescription>{successMessage}</AlertDescription>
+          </Alert>
         )}
 
         {activeTab === "upload" && profile && (
-          <div className="flex flex-col gap-6 animate-auth-fade-up">
+          <div className="flex animate-auth-fade-up flex-col gap-6">
             <AccountSummaryCard
               firstName={profile.first_name}
               lastName={profile.last_name}
@@ -166,9 +166,8 @@ export default function DashboardContent() {
             <DashboardKpiCards refreshKey={refreshKey} />
 
             <section className={GLASS_CARD}>
-              <div className="dashboard-shimmer pointer-events-none absolute inset-0" aria-hidden="true" />
               <div className={GLASS_CARD_INNER}>
-                <h2 className="text-lg font-semibold text-white">Upload a Transcript</h2>
+                <h2 className="text-lg font-semibold tracking-tight">Upload a Transcript</h2>
                 <div className="mt-5">
                   <UploadTranscript
                     plan={profile.plan}
@@ -182,17 +181,16 @@ export default function DashboardContent() {
         )}
 
         {activeTab === "history" && (
-          <div className="flex flex-col gap-6 animate-auth-fade-up">
+          <div className="flex animate-auth-fade-up flex-col gap-6">
             <DocumentSearch
               query={historySearchQuery}
               onQueryChange={setHistorySearchQuery}
             />
 
             <section className={GLASS_CARD}>
-              <div className="dashboard-shimmer pointer-events-none absolute inset-0" aria-hidden="true" />
               <div className={GLASS_CARD_INNER}>
-                <h2 className="text-lg font-semibold text-white">History</h2>
-                <p className="mt-1 text-sm text-zinc-400">
+                <h2 className="text-lg font-semibold tracking-tight">History</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
                   {historySearchQuery.trim()
                     ? "Matching transcripts and PDF reports across all uploads."
                     : "Transcripts and PDF reports from the last 7 days."}
@@ -210,7 +208,6 @@ export default function DashboardContent() {
 
         {activeTab === "backup" && (
           <section className={`${GLASS_CARD} animate-auth-fade-up`}>
-            <div className="dashboard-shimmer pointer-events-none absolute inset-0" aria-hidden="true" />
             <div className={GLASS_CARD_INNER}>
               <BackupData />
             </div>

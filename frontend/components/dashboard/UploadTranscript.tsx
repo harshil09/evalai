@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { CloudUpload, Loader2 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import UpgradePlanModal from "@/components/dashboard/UpgradePlanModal";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 type UploadTranscriptProps = {
   plan: string;
@@ -36,26 +40,6 @@ function validateFile(file: File): string | null {
     return `${file.name}: only .txt and .md files are supported.`;
   }
   return null;
-}
-
-function CloudUploadIcon() {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      className="mx-auto h-10 w-10 text-violet-400"
-      aria-hidden="true"
-    >
-      <path d="M12 16V4m0 0 7 7m-7-7-7 7" strokeLinecap="round" strokeLinejoin="round" />
-      <path
-        d="M4 18.5A4.5 4.5 0 0 0 8.5 23h7A4.5 4.5 0 0 0 20 18.5"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
 }
 
 export default function UploadTranscript({
@@ -237,11 +221,11 @@ export default function UploadTranscript({
       />
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        <p className="text-sm leading-relaxed text-zinc-400">
-          Upload a <code className="text-violet-300">.txt</code> or{" "}
-          <code className="text-violet-300">.md</code> file of your AI conversation.
-          EvalAI scores the transcript across 12 efficiency dimensions and generates a PDF
-          report.
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          Upload a <code className="rounded bg-muted px-1 py-0.5 text-primary">.txt</code> or{" "}
+          <code className="rounded bg-muted px-1 py-0.5 text-primary">.md</code> file of your AI
+          conversation. EvalAI scores the transcript across 12 efficiency dimensions and generates
+          a PDF report.
         </p>
 
         <div>
@@ -257,23 +241,24 @@ export default function UploadTranscript({
           <button
             type="button"
             onClick={handleChooseFile}
-            className={`w-full rounded-xl border-2 border-dashed px-6 py-10 text-center transition ${
+            className={cn(
+              "w-full rounded-xl border-2 border-dashed px-6 py-10 text-center transition-all hover:shadow-sm",
               atFreeLimit
-                ? "border-amber-500/30 bg-amber-500/5 hover:border-amber-500/50"
-                : "border-violet-500/35 bg-violet-500/5 hover:border-violet-400/55 hover:bg-violet-500/10"
-            }`}
+                ? "border-amber-300 bg-amber-50 hover:border-amber-400"
+                : "border-primary/30 bg-accent/50 hover:border-primary/50 hover:bg-accent",
+            )}
           >
-            <CloudUploadIcon />
-            <p className="mt-3 text-sm font-medium text-white">
+            <CloudUpload className="mx-auto size-10 text-primary" />
+            <p className="mt-3 text-sm font-medium">
               {atFreeLimit
                 ? "Free plan limit reached — choose a plan to continue"
                 : "Click to choose a .txt or .md file"}
             </p>
-            <p className="mt-1 text-xs text-zinc-500">Max 5MB</p>
+            <p className="mt-1 text-xs text-muted-foreground">Max 5MB</p>
           </button>
 
           {files.length > 0 && (
-            <ul className="mt-3 space-y-1 text-sm text-zinc-400">
+            <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
               {files.map((selectedFile) => (
                 <li
                   key={`${selectedFile.name}-${selectedFile.size}-${selectedFile.lastModified}`}
@@ -286,26 +271,27 @@ export default function UploadTranscript({
         </div>
 
         {atFreeLimit && (
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={() => setShowUpgradeModal(true)}
-            className="w-full rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2.5 text-sm font-medium text-violet-200 transition hover:bg-violet-500/15"
+            className="w-full border-primary/30 text-primary hover:bg-accent"
           >
             View Free &amp; Pro plans
-          </button>
+          </Button>
         )}
         {error && (
-          <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-            {error}
-          </p>
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
         {success && (
-          <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
-            {success}
-          </p>
+          <Alert className="border-emerald-200 bg-emerald-50 text-emerald-800">
+            <AlertDescription>{success}</AlertDescription>
+          </Alert>
         )}
 
-        <button
+        <Button
           type="submit"
           disabled={uploading || files.length === 0}
           onClick={(event) => {
@@ -314,14 +300,15 @@ export default function UploadTranscript({
               setShowUpgradeModal(true);
             }
           }}
-          className="auth-gradient-btn rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+          className="transition-all active:scale-[0.98]"
         >
+          {uploading && <Loader2 className="size-4 animate-spin" />}
           {uploading
             ? "Uploading..."
             : atFreeLimit
               ? "Upgrade to upload more"
               : "Analyze Transcript"}
-        </button>
+        </Button>
       </form>
     </>
   );
